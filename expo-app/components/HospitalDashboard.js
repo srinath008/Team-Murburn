@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform, Activity
 import { 
   Activity, Phone, ShieldAlert, CheckCircle2, XCircle, 
   MapPin, Sparkles, Clock, HeartHandshake, Wifi, WifiOff, Database
-} from 'lucide-react-native';
+} from './Icons';
 
 export default function HospitalDashboard() {
   // Config & Status
