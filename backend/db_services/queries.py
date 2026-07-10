@@ -25,6 +25,7 @@ SETUP:
     database/README.md for how to obtain AuraDB connection credentials.
 """
 
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -153,6 +154,74 @@ def get_donor(driver: Driver, donor_id: str) -> Optional[dict]:
         result = session.run(_GET_DONOR_QUERY, donor_id=donor_id)
         record = result.single()
         return record.data() if record else None
+
+
+# -----------------------------------------------------------------------------
+# 4. REGISTER DONOR (app-based self-registration)
+#    Called when a donor signs up via the mobile app. Uses MERGE on phone
+#    so a re-registration with the same number updates the record rather
+#    than creating a duplicate. UUID is generated server-side.
+# -----------------------------------------------------------------------------
+_REGISTER_DONOR_QUERY = """
+MERGE (d:Donor {phone: $phone})
+ON CREATE SET d.id = $donor_id
+SET d.name            = $name,
+    d.blood_group     = $blood_group,
+    d.language        = $language,
+    d.location        = point({latitude: $lat, longitude: $lng}),
+    d.has_app         = true,
+    d.last_donated_date = $last_donated_date
+RETURN d.id AS id, d.name AS name, d.phone AS phone
+"""
+
+
+def register_donor(
+    driver: Driver,
+    name: str,
+    phone: str,
+    blood_group: str,
+    language: str,
+    lat: float,
+    lng: float,
+    last_donated_date: Optional[str] = None,
+) -> dict:
+    """
+    Create or update a donor who registered via the mobile app.
+
+    Uses MERGE on phone so calling this twice with the same number updates
+    the existing node instead of creating a duplicate. A UUID is generated
+    server-side on first creation; subsequent calls preserve the original id.
+
+    Args:
+        driver: an active neo4j.Driver (created by the backend at startup)
+        name: donor's full name
+        phone: unique mobile number used as the merge key
+        blood_group: e.g. "O-", "AB+"
+        language: preferred notification language, e.g. "en", "ta"
+        lat / lng: donor's registered location coordinates
+        last_donated_date: optional ISO-8601 date string; stored as null if
+                           not provided (meaning the donor is immediately
+                           eligible for dispatch)
+
+    Returns:
+        Dict with {id, name, phone} of the created or updated donor.
+    """
+    donor_id = str(uuid.uuid4())
+
+    with driver.session() as session:
+        result = session.run(
+            _REGISTER_DONOR_QUERY,
+            donor_id=donor_id,
+            name=name,
+            phone=phone,
+            blood_group=blood_group,
+            language=language,
+            lat=lat,
+            lng=lng,
+            last_donated_date=last_donated_date,
+        )
+        record = result.single()
+        return record.data()
 
 
 # -----------------------------------------------------------------------------
