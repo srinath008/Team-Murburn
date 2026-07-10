@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   User, Phone, Heart, Calendar, Award, 
   AlertCircle, MapPin, RotateCcw, Check, Map
-} from 'lucide-react-native';
+} from './Icons';
 
 const COOLDOWN_DAYS = 56;
 const MS_IN_A_DAY = 24 * 60 * 60 * 1000;
