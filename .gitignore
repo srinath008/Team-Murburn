@@ -1,0 +1,21 @@
+# Environment secrets — never commit real credentials
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Expo (frontend team)
+node_modules/
+.expo/
+dist/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
