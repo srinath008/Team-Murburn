@@ -7,19 +7,114 @@ db_services — Database abstraction layer.
 ║  Instead, call the async functions exported from this package.  ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-The stubs below define the interface contract that the backend
-expects.  The DB engineer will implement the real Neo4j logic.
+Real Neo4j-backed implementation. Wraps the async neo4j driver and
+converts raw records into the Pydantic models the rest of the backend
+(routes.py, orchestration/graph.py) already expects.
+
+Connection settings are read from backend.config.settings (NEO4J_URI,
+NEO4J_USER, NEO4J_PASSWORD in .env) — see database/README.md for how
+to obtain them from AuraDB.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+from uuid import uuid4
 
-from backend.schemas.models import DonorNode
+from neo4j import AsyncDriver, AsyncGraphDatabase
+
+from backend.config import settings
+from backend.schemas.models import Coordinates, DonorNode
 
 logger = logging.getLogger(__name__)
+
+# -----------------------------------------------------------------------------
+# Driver lifecycle
+# -----------------------------------------------------------------------------
+_driver: Optional[AsyncDriver] = None
+
+
+def _get_driver() -> AsyncDriver:
+    """Lazily create the shared async Neo4j driver (one per process)."""
+    global _driver
+    if _driver is None:
+        _driver = AsyncGraphDatabase.driver(
+            settings.neo4j_uri,
+            auth=(settings.neo4j_user, settings.neo4j_password),
+        )
+        logger.info("Neo4j async driver initialised (%s)", settings.neo4j_uri)
+    return _driver
+
+
+async def close() -> None:
+    """Gracefully close the driver. Call this from main.py's shutdown lifespan."""
+    global _driver
+    if _driver is not None:
+        await _driver.close()
+        _driver = None
+        logger.info("Neo4j async driver closed.")
+
+
+# -----------------------------------------------------------------------------
+# Internal: convert a Neo4j record into a DonorNode
+# -----------------------------------------------------------------------------
+def _record_to_donor_node(record: dict) -> DonorNode:
+    """
+    Convert a raw Neo4j record (dict-like) into a validated DonorNode.
+    Handles the two Neo4j-specific types that don't map 1:1 to Python:
+      - point()   -> Coordinates(lat, lng)
+      - datetime()-> native Python datetime (or None)
+    """
+    location = record.get("location")
+    coordinates = (
+        Coordinates(lat=location.latitude, lng=location.longitude)
+        if location is not None
+        else Coordinates(lat=0.0, lng=0.0)
+    )
+
+    last_donated = record.get("last_donated_date")
+    last_donated_native = last_donated.to_native() if last_donated is not None else None
+
+    return DonorNode(
+        id=record["id"],
+        name=record["name"],
+        phone=record["phone"],
+        blood_group=record["blood_group"],
+        language=record["language"],
+        location=coordinates,
+        has_app=record.get("has_app", False),
+        last_donated_date=last_donated_native,
+    )
+
+
+# -----------------------------------------------------------------------------
+# 1. FIND ELIGIBLE DONORS
+#    Called by routes.py (POST /api/dispatch) and orchestration/graph.py
+#    (query_donors_node). Spatial (10km) + cooldown (56-day) match.
+# -----------------------------------------------------------------------------
+_FIND_ELIGIBLE_DONORS_QUERY = """
+MATCH (d:Donor {blood_group: $blood_group})
+WHERE point.distance(
+        d.location,
+        point({latitude: $lat, longitude: $lng})
+      ) <= $radius_meters
+  AND (
+        d.last_donated_date IS NULL
+        OR d.last_donated_date < datetime($cooldown_cutoff)
+      )
+RETURN
+    d.id AS id,
+    d.name AS name,
+    d.phone AS phone,
+    d.blood_group AS blood_group,
+    d.language AS language,
+    d.location AS location,
+    d.has_app AS has_app,
+    d.last_donated_date AS last_donated_date
+ORDER BY point.distance(d.location, point({latitude: $lat, longitude: $lng})) ASC
+"""
 
 
 async def find_eligible_donors(
@@ -31,15 +126,44 @@ async def find_eligible_donors(
 ) -> List[DonorNode]:
     """
     Query Neo4j for donors matching:
-      • blood_group
-      • within `radius_km` of (lat, lng)
-      • last_donated_date is NULL **or** > `cooldown_days` days ago
+      - blood_group
+      - within `radius_km` of (lat, lng)
+      - last_donated_date is NULL **or** > `cooldown_days` days ago
 
-    Returns a list of DonorNode models.
+    Returns a list of DonorNode models, closest first.
     """
-    # TODO: DB Engineer — replace with real Cypher spatial query
-    logger.warning("find_eligible_donors() is using a STUB — no real DB call yet.")
-    return []
+    cooldown_cutoff = (datetime.now(timezone.utc) - timedelta(days=cooldown_days)).isoformat()
+
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            _FIND_ELIGIBLE_DONORS_QUERY,
+            blood_group=blood_group,
+            lat=lat,
+            lng=lng,
+            radius_meters=radius_km * 1000,
+            cooldown_cutoff=cooldown_cutoff,
+        )
+        records = [record.data() async for record in result]
+
+    donors = [_record_to_donor_node(r) for r in records]
+    logger.info(
+        "find_eligible_donors: %d matches (blood_group=%s, radius=%skm)",
+        len(donors), blood_group, radius_km,
+    )
+    return donors
+
+
+# -----------------------------------------------------------------------------
+# 2. UPDATE DONATION DATE
+#    Called by routes.py (POST /api/donate) after a successful transfusion.
+#    Starts the 56-day cooldown.
+# -----------------------------------------------------------------------------
+_UPDATE_DONATION_DATE_QUERY = """
+MATCH (d:Donor {id: $donor_id})
+SET d.last_donated_date = datetime($donated_at)
+RETURN d.id AS id
+"""
 
 
 async def update_donation_date(
@@ -48,11 +172,43 @@ async def update_donation_date(
 ) -> bool:
     """
     Set `last_donated_date` on the donor node to `donated_at`
-    (defaults to utcnow). Returns True on success.
+    (defaults to utcnow). Returns True on success, False if the
+    donor_id didn't match any node.
     """
-    # TODO: DB Engineer — implement Cypher UPDATE
-    logger.warning("update_donation_date() is using a STUB — no real DB call yet.")
-    return True
+    ts = (donated_at or datetime.now(timezone.utc)).isoformat()
+
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            _UPDATE_DONATION_DATE_QUERY,
+            donor_id=donor_id,
+            donated_at=ts,
+        )
+        record = await result.single()
+
+    success = record is not None
+    if success:
+        logger.info("Donation logged for donor %s at %s", donor_id, ts)
+    else:
+        logger.warning("update_donation_date: donor %s not found", donor_id)
+    return success
+
+
+# -----------------------------------------------------------------------------
+# 3. GET DONOR BY ID
+# -----------------------------------------------------------------------------
+_GET_DONOR_BY_ID_QUERY = """
+MATCH (d:Donor {id: $donor_id})
+RETURN
+    d.id AS id,
+    d.name AS name,
+    d.phone AS phone,
+    d.blood_group AS blood_group,
+    d.language AS language,
+    d.location AS location,
+    d.has_app AS has_app,
+    d.last_donated_date AS last_donated_date
+"""
 
 
 async def get_donor_by_id(donor_id: str) -> Optional[DonorNode]:
@@ -60,19 +216,112 @@ async def get_donor_by_id(donor_id: str) -> Optional[DonorNode]:
     Fetch a single donor node by its UUID.
     Returns None if not found.
     """
-    # TODO: DB Engineer — implement Cypher MATCH
-    logger.warning("get_donor_by_id() is using a STUB — no real DB call yet.")
-    return None
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_DONOR_BY_ID_QUERY, donor_id=donor_id)
+        record = await result.single()
+
+    if record is None:
+        return None
+    return _record_to_donor_node(record.data())
+
+
+# -----------------------------------------------------------------------------
+# 4. GET DONOR PUSH TOKEN
+#    Called by orchestration/graph.py (route_donor_node) to send Expo
+#    push notifications to donors with the app.
+#
+#    NOTE: The donor schema now supports an optional `push_token`
+#    property (see database/schema.cypher). The mobile app does not
+#    currently send a push token during registration — that's a
+#    frontend follow-up (Expo's getExpoPushTokenAsync()) needed before
+#    this will ever return a real value. Until then this correctly
+#    returns None and the orchestration graph falls back to SMS.
+# -----------------------------------------------------------------------------
+_GET_DONOR_PUSH_TOKEN_QUERY = """
+MATCH (d:Donor {id: $donor_id})
+RETURN d.push_token AS push_token
+"""
 
 
 async def get_donor_push_token(donor_id: str) -> Optional[str]:
     """
     Fetch the Expo push token for a donor who has the mobile app.
-    Returns None if the donor has no push token registered.
-
-    The mobile app stores the push token in Neo4j when the donor
-    registers / logs in.
+    Returns None if the donor has no push token registered (or the
+    donor doesn't exist).
     """
-    # TODO: DB Engineer — implement Cypher MATCH for push token
-    logger.warning("get_donor_push_token() is using a STUB — no real DB call yet.")
-    return None
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_DONOR_PUSH_TOKEN_QUERY, donor_id=donor_id)
+        record = await result.single()
+
+    if record is None:
+        return None
+    return record.data().get("push_token")
+
+
+# -----------------------------------------------------------------------------
+# 5. REGISTER DONOR (app-based self-registration)
+#    Not yet wired to a route — no POST /api/donor/register endpoint
+#    exists in routes.py yet. Exposed here so the Backend Lead can call
+#    it directly once that endpoint is built. Uses MERGE on phone so
+#    re-registering with the same number updates the record instead of
+#    creating a duplicate.
+# -----------------------------------------------------------------------------
+_REGISTER_DONOR_QUERY = """
+MERGE (d:Donor {phone: $phone})
+ON CREATE SET d.id = $donor_id
+SET d.name              = $name,
+    d.blood_group       = $blood_group,
+    d.language           = $language,
+    d.location            = point({latitude: $lat, longitude: $lng}),
+    d.has_app             = true,
+    d.last_donated_date  = $last_donated_date,
+    d.push_token          = coalesce($push_token, d.push_token)
+RETURN
+    d.id AS id, d.name AS name, d.phone AS phone,
+    d.blood_group AS blood_group, d.language AS language,
+    d.location AS location, d.has_app AS has_app,
+    d.last_donated_date AS last_donated_date
+"""
+
+
+async def register_donor(
+    name: str,
+    phone: str,
+    blood_group: str,
+    language: str,
+    lat: float,
+    lng: float,
+    last_donated_date: Optional[str] = None,
+    push_token: Optional[str] = None,
+) -> DonorNode:
+    """
+    Create or update a donor who registered via the mobile app.
+
+    Args:
+        push_token: Expo push token, if the frontend collects one at
+                    registration time (optional — see note above).
+
+    Returns the created/updated donor as a DonorNode.
+    """
+    donor_id = str(uuid4())
+
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(
+            _REGISTER_DONOR_QUERY,
+            donor_id=donor_id,
+            name=name,
+            phone=phone,
+            blood_group=blood_group,
+            language=language,
+            lat=lat,
+            lng=lng,
+            last_donated_date=last_donated_date,
+            push_token=push_token,
+        )
+        record = await result.single()
+
+    logger.info("Donor registered/updated: phone=%s", phone)
+    return _record_to_donor_node(record.data())

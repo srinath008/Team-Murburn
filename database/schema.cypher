@@ -36,7 +36,11 @@ FOR (d:Donor) ON (d.last_donated_date);
 //   language: "string 'tamil' | 'hindi' | 'english'",
 //   location: point({latitude: float, longitude: float}),
 //   has_app: boolean,
-//   last_donated_date: datetime | null
+//   last_donated_date: datetime | null,
+//   push_token: string | null   -- Expo push token, set once the mobile
+//                                   app requests one and registers it.
+//                                   NULL until the frontend implements
+//                                   getExpoPushTokenAsync() at registration.
 // })
 //
 // (:Hospital {

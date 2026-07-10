@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀  Blood Dispatch Backend starting up (env=%s)", settings.app_env)
     yield
     # Shutdown — close service clients.
+    from backend.db_services import close as close_db
     from backend.services.exotel_service import close as close_exotel
     from backend.services.push_service import close as close_push
     from backend.services.sarvam_service import close as close_sarvam
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     await close_exotel()
     await close_sarvam()
     await close_push()
+    await close_db()
     logger.info("🛑  Blood Dispatch Backend shut down cleanly.")
 
 
