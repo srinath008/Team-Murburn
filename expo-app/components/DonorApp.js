@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { 
-  User, Phone, Heart, Calendar, Award, 
-  AlertCircle, MapPin, RotateCcw, Check, Map
-} from './Icons';
 
 const COOLDOWN_DAYS = 56;
 const MS_IN_A_DAY = 24 * 60 * 60 * 1000;
@@ -127,7 +123,7 @@ export default function DonorApp() {
     <ScrollView style={s.root} contentContainerStyle={s.rootContent}>
       {/* Header */}
       <View style={s.headerWrap}>
-        <View style={s.headerIcon}><Heart size={30} color="white" /></View>
+        <View style={s.headerIcon}><Text style={{fontSize: 28}}>❤️</Text></View>
         <Text style={s.headerTitle}>Donor Lifeline App</Text>
         <Text style={s.headerSub}>ACTIVE EMERGENCY DONOR NETWORK</Text>
       </View>
@@ -136,7 +132,7 @@ export default function DonorApp() {
         /* REGISTRATION FORM */
         <View style={s.card}>
           <View style={s.cardTitleRow}>
-            <User size={18} color="#e11d48" />
+            <Text style={{fontSize: 16, marginRight: 6}}>👤</Text>
             <Text style={s.cardTitle}>Zero-Friction Registry</Text>
           </View>
           <Text style={s.cardDesc}>Register your details to join the emergency donor network. You will receive concurrent AI calls if you are eligible and within 10km of a hospital emergency.</Text>
@@ -200,7 +196,7 @@ export default function DonorApp() {
 
             <View style={s.profileMetaRow}>
               <View style={s.row}>
-                <MapPin size={12} color="#64748b" />
+                <Text style={{fontSize: 10}}>📍</Text>
                 <Text style={s.metaText}>  {parseFloat(lat).toFixed(4)}, {parseFloat(lng).toFixed(4)}</Text>
               </View>
               <View style={s.langBadge}><Text style={s.langBadgeText}>{language.toUpperCase()}</Text></View>
@@ -220,8 +216,8 @@ export default function DonorApp() {
           <View style={[s.card, { marginTop: 16 }]}>
             <View style={[s.row, { justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }]}>
               <View style={s.row}>
-                <Calendar size={18} color="#e11d48" />
-                <Text style={[s.cardTitle, { marginLeft: 8 }]}>Medical Cooldown Tracker</Text>
+                <Text style={{fontSize: 16, marginRight: 6}}>📅</Text>
+                <Text style={[s.cardTitle, { marginLeft: 0 }]}>Medical Cooldown Tracker</Text>
               </View>
               <View style={[s.statusBadge, daysRemaining === 0 ? s.statusEligible : s.statusLocked]}>
                 <Text style={[s.statusBadgeText, daysRemaining === 0 ? s.statusEligibleText : s.statusLockedText]}>
@@ -256,7 +252,7 @@ export default function DonorApp() {
                   </>
                 ) : (
                   <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-                    <Check size={28} color="#059669" />
+                    <Text style={{fontSize: 24}}>✅</Text>
                     <Text style={s.eligibleText}>FULLY ELIGIBLE</Text>
                   </View>
                 )}
@@ -266,7 +262,7 @@ export default function DonorApp() {
             {/* Status message */}
             {daysRemaining > 0 ? (
               <View style={s.alertBoxRose}>
-                <AlertCircle size={16} color="#e11d48" />
+                <Text style={{fontSize: 14, marginTop: 2}}>⚠️</Text>
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={s.alertTitle}>Exempted from Dispatches</Text>
                   <Text style={s.alertDesc}>You are excluded from spatial emergency queries. You will become eligible again on:</Text>
@@ -275,7 +271,7 @@ export default function DonorApp() {
               </View>
             ) : (
               <View style={s.alertBoxGreen}>
-                <Award size={16} color="#059669" />
+                <Text style={{fontSize: 14, marginTop: 2}}>🏅</Text>
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={s.alertTitleGreen}>Status: Awaiting Dispatch Calls</Text>
                   <Text style={s.alertDesc}>You are fully active in the system. If an emergency matches your blood group within 10km, an AI voice assistant will contact you.</Text>
@@ -287,7 +283,7 @@ export default function DonorApp() {
           {/* Simulator */}
           <View style={[s.card, { marginTop: 16 }]}>
             <View style={s.row}>
-              <RotateCcw size={16} color="#475569" />
+              <Text style={{fontSize: 14}}>🔄</Text>
               <Text style={[s.cardTitle, { marginLeft: 8 }]}>Milestone Simulator</Text>
             </View>
             <Text style={[s.cardDesc, { marginTop: 6 }]}>Test how the lockout gauge and dynamic statuses change by simulating different donation milestones:</Text>
