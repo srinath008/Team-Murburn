@@ -5,7 +5,8 @@ Bulk-uploads a hospital's legacy donor spreadsheet (CSV) into Neo4j.
 
 WHAT IT DOES:
     1. Reads a CSV of donors (name, phone, blood_group, language, address).
-    2. Geocodes each address into (lat, lng) using the Google Geocoding API.
+    2. Geocodes each address into (lat, lng) using OpenStreetMap Nominatim
+       (free, no API key required).
     3. Inserts each donor as a (:Donor) node in Neo4j with has_app = false
        (legacy donors don't have the app until they register themselves).
 
@@ -18,7 +19,6 @@ USAGE:
 
 ENV VARS REQUIRED (see .env.example):
     NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
-    GOOGLE_GEOCODING_API_KEY
 """
 
 import argparse
@@ -36,33 +36,34 @@ from neo4j import GraphDatabase
 
 load_dotenv()
 
-GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+GEOCODE_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_USER_AGENT = "BloodDispatchNetwork-Hackathon/1.0"
 
-# Google's free/paid tier rate limits vary; this keeps us well under any
-# reasonable limit during a bulk ingest. Tune down if you hit 429s.
-SECONDS_BETWEEN_GEOCODE_CALLS = 0.05
+# Nominatim usage policy: max 1 request per second.
+SECONDS_BETWEEN_GEOCODE_CALLS = 1.1
 
 
-def geocode_address(address: str, api_key: str) -> Optional[dict]:
+def geocode_address(address: str) -> Optional[dict]:
     """
-    Convert a street address into {"lat": float, "lng": float}.
+    Convert a street address into {"lat": float, "lng": float} using
+    OpenStreetMap Nominatim (free, no API key required).
     Returns None if the address couldn't be geocoded (logged, not fatal —
     we skip that row rather than crash the whole ingest).
     """
     response = requests.get(
         GEOCODE_URL,
-        params={"address": address, "key": api_key},
+        params={"q": address, "format": "json", "limit": 1},
+        headers={"User-Agent": NOMINATIM_USER_AGENT},
         timeout=10,
     )
     response.raise_for_status()
-    data = response.json()
+    results = response.json()
 
-    if data.get("status") != "OK" or not data.get("results"):
-        print(f"  [WARN] Could not geocode: '{address}' (status: {data.get('status')})")
+    if not results:
+        print(f"  [WARN] Could not geocode: '{address}' (no results)")
         return None
 
-    location = data["results"][0]["geometry"]["location"]
-    return {"lat": location["lat"], "lng": location["lng"]}
+    return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])}
 
 
 _INSERT_DONOR_QUERY = """
@@ -96,7 +97,6 @@ def run_ingest(csv_path: Path) -> None:
     neo4j_uri = os.environ["NEO4J_URI"]
     neo4j_user = os.environ["NEO4J_USERNAME"]
     neo4j_password = os.environ["NEO4J_PASSWORD"]
-    google_api_key = os.environ["GOOGLE_GEOCODING_API_KEY"]
 
     driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
 
@@ -113,7 +113,7 @@ def run_ingest(csv_path: Path) -> None:
             address = row["address"].strip()
             print(f"Row {row_num}: geocoding '{address}'...")
 
-            coords = geocode_address(address, google_api_key)
+            coords = geocode_address(address)
             time.sleep(SECONDS_BETWEEN_GEOCODE_CALLS)
 
             if coords is None:
