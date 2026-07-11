@@ -22,26 +22,17 @@ Fill in `.env` with:
 - `NEO4J_URI` — from step 1
 - `NEO4J_USERNAME` — usually `neo4j`
 - `NEO4J_PASSWORD` — from step 1
-- `GOOGLE_GEOCODING_API_KEY` — see step 3
 
-## 3. Get a Google Geocoding API Key
+Geocoding uses OpenStreetMap Nominatim (free, no API key required) — see
+`database/ingest_csv.py`. No geocoding setup needed.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/).
-2. Create a project (or reuse one).
-3. Go to **APIs & Services → Library**, search **Geocoding API**, click **Enable**.
-4. Go to **APIs & Services → Credentials → Create Credentials → API Key**.
-5. Paste the key into `.env` as `GOOGLE_GEOCODING_API_KEY`.
-
-**Note:** Google requires a billing account attached even for free-tier usage,
-but geocoding has a generous free monthly quota — fine for hackathon scale.
-
-## 4. Install Dependencies
+## 3. Install Dependencies
 
 ```bash
 pip install -r database/requirements.txt
 ```
 
-## 5. Initialize the Schema
+## 4. Initialize the Schema
 
 Open your AuraDB instance's **Neo4j Browser** (link in the Aura console) and
 paste in the contents of `database/schema.cypher`, or run it via
@@ -51,7 +42,7 @@ paste in the contents of `database/schema.cypher`, or run it via
 cypher-shell -a $NEO4J_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD -f database/schema.cypher
 ```
 
-## 6. Test the Ingestion Script
+## 5. Test the Ingestion Script
 
 ```bash
 python database/ingest_csv.py --file database/sample_donors.csv
@@ -64,7 +55,7 @@ Verify in Neo4j Browser with:
 MATCH (d:Donor) RETURN d LIMIT 10;
 ```
 
-## 7. Build the Docker Image (once backend has a `main.py`)
+## 6. Build the Docker Image (once backend has a `main.py`)
 
 ```bash
 docker build -t blood-dispatch-backend .
