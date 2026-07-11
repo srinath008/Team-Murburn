@@ -64,6 +64,7 @@ class DashboardConnectionManager:
         payload = update.model_dump_json()
         async with self._lock:
             conns = self._connections.get(dispatch_id, set()).copy()
+            conns.update(self._connections.get("global", set()))
 
         dead: list[WebSocket] = []
         for ws in conns:
@@ -77,12 +78,14 @@ class DashboardConnectionManager:
             async with self._lock:
                 for ws in dead:
                     self._connections.get(dispatch_id, set()).discard(ws)
+                    self._connections.get("global", set()).discard(ws)
 
     async def broadcast_raw(self, dispatch_id: str, data: dict) -> None:
         """Send a raw dict payload to all watchers of a dispatch."""
         payload = json.dumps(data)
         async with self._lock:
             conns = self._connections.get(dispatch_id, set()).copy()
+            conns.update(self._connections.get("global", set()))
 
         dead: list[WebSocket] = []
         for ws in conns:
@@ -95,6 +98,7 @@ class DashboardConnectionManager:
             async with self._lock:
                 for ws in dead:
                     self._connections.get(dispatch_id, set()).discard(ws)
+                    self._connections.get("global", set()).discard(ws)
 
 
 # Singleton — import and use from anywhere in the backend.

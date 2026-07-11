@@ -98,7 +98,7 @@ async def initiate_calls_node(state: Dict[str, Any]) -> Dict[str, Any]:
     from backend.config import settings
     from backend.dispatch_store import dispatch_store
     from backend.schemas.models import DonorNode
-    from backend.services.exotel_service import initiate_call
+    from backend.services.twilio_service import initiate_call
 
     dispatch_id = state.get("dispatch_id", "")
     donors = state.get("donors", {})
@@ -116,15 +116,14 @@ async def initiate_calls_node(state: Dict[str, Any]) -> Dict[str, Any]:
         lng=state.get("lng", 0.0),
     )
 
-    # Build the callback URL that Exotel will POST status updates to.
-    callback_url = f"{settings.server_base_url}/api/exotel/status-callback"
+    # Build the callback URL that Twilio will POST status updates to.
+    callback_url = f"{settings.server_base_url}/api/twilio/status-callback"
 
-    # Fire concurrent calls and collect results.
     updates: List[Dict[str, Any]] = []
     call_tasks = []
 
     for donor_id, donor_data in donors.items():
-        # Reconstruct a minimal DonorNode for the Exotel service.
+        # Reconstruct a minimal DonorNode for the Twilio service.
         donor_node = DonorNode(
             id=donor_id,
             name=donor_data["name"],
@@ -164,7 +163,7 @@ async def _initiate_single_call(
     Errors are logged but do not crash the dispatch.
     """
     from backend.dispatch_store import dispatch_store
-    from backend.services.exotel_service import initiate_call
+    from backend.services.twilio_service import initiate_call
 
     try:
         result = await initiate_call(donor_node, dispatch_id, callback_url)
@@ -188,7 +187,7 @@ async def route_donor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     or SMS with web-tracking link (fallback path).
     """
     from backend.db_services import get_donor_push_token
-    from backend.services.exotel_service import send_sms
+    from backend.services.twilio_service import send_sms
     from backend.services.push_service import send_dispatch_notification
 
     dispatch_id = state.get("dispatch_id", "")
@@ -243,7 +242,7 @@ async def _send_sms_fallback(
     donor_data: Dict[str, Any], dispatch_id: str, donor_id: str
 ) -> None:
     """Send an SMS with a tracking link as a fallback routing path."""
-    from backend.services.exotel_service import send_sms
+    from backend.services.twilio_service import send_sms
 
     tracking_url = f"https://bloodnet.app/track/{dispatch_id}/{donor_id}"
     await send_sms(

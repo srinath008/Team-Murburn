@@ -1,14 +1,15 @@
 """
-Exotel callback and audio-stream endpoints.
+Twilio callback and audio-stream endpoints.
 
 Routes:
-  POST  /api/exotel/status-callback    — Exotel call-status webhook
-  WS    /ws/exotel/audio-stream        — Exotel live audio WebSocket
+  POST  /api/twilio/status-callback    — Twilio call-status webhook
+  WS    /ws/twilio/audio-stream        — Twilio live audio WebSocket
 """
 
 from __future__ import annotations
 
 import json
+import base64
 import logging
 from typing import Optional
 
@@ -20,14 +21,14 @@ from backend.schemas.models import CallStatus, DonorStatusUpdate
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["exotel-callbacks"])
+router = APIRouter(tags=["twilio-callbacks"])
 
 
-# ── Exotel status → our CallStatus mapping ────────────────────────
+# ── Twilio status → our CallStatus mapping ────────────────────────
 
-_EXOTEL_STATUS_MAP = {
-    "in-progress": None,           # Call is ringing / ongoing — no update yet
-    "completed":   None,           # Terminal — resolved by voice pipeline intent
+_TWILIO_STATUS_MAP = {
+    "in-progress": None,           
+    "completed":   None,           
     "busy":        CallStatus.DECLINED,
     "no-answer":   CallStatus.DECLINED,
     "failed":      CallStatus.DECLINED,
@@ -35,48 +36,62 @@ _EXOTEL_STATUS_MAP = {
 }
 
 
-# ── POST /api/exotel/status-callback ─────────────────────────────
+# ── GET /api/twilio/twiml ─────────────────────────────────────────
 
-@router.post("/api/exotel/status-callback")
-async def exotel_status_callback(
-    CallSid: str = Form(...),
-    Status: str = Form(default=""),
-    CustomField: str = Form(default=""),
-    To: str = Form(default=""),
-    From_: str = Form(default="", alias="From"),
-    DateUpdated: str = Form(default=""),
+from fastapi.responses import Response
+from backend.config import settings
+
+@router.post("/api/twilio/twiml")
+@router.get("/api/twilio/twiml")
+async def get_twiml(dispatch_id: str = Query(default=""), donor_id: str = Query(default="")):
+    """
+    Returns the TwiML XML that instructs Twilio to connect the call
+    to our Audio Stream WebSocket.
+    """
+    ws_url = settings.server_base_url.replace("http", "ws") + settings.twilio_audio_ws_path
+    
+    # We can pass custom params by appending them to the stream URL
+    stream_url = f"{ws_url}?dispatch_id={dispatch_id}&donor_id={donor_id}"
+    
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{stream_url}" />
+    </Connect>
+</Response>"""
+    return Response(content=xml, media_type="application/xml")
+
+
+# ── POST /api/twilio/status-callback ─────────────────────────────
+
+@router.post("/api/twilio/status-callback")
+async def twilio_status_callback(
+    CallSid: str = Form(default=""),
+    CallStatus: str = Form(default=""),
+    dispatch_id: str = Query(default=""),
+    donor_id: str = Query(default=""),
 ):
     """
-    Webhook endpoint that Exotel POSTs to whenever a call's status
-    changes (answered, completed, busy, no-answer, failed).
-
-    We look up the dispatch + donor from the call SID, map the Exotel
-    status to our internal CallStatus, and broadcast the update to the
-    hospital dashboard via WebSocket.
+    Webhook endpoint that Twilio POSTs to whenever a call's status changes.
     """
     logger.info(
-        "Exotel callback: SID=%s Status=%s CustomField=%s To=%s",
-        CallSid, Status, CustomField, To,
+        "Twilio callback: SID=%s Status=%s dispatch_id=%s donor_id=%s",
+        CallSid, CallStatus, dispatch_id, donor_id,
     )
 
-    # Look up which dispatch + donor this call belongs to.
-    lookup = await dispatch_store.get_by_call_sid(CallSid)
-    if not lookup:
-        logger.warning("Exotel callback for unknown call SID: %s", CallSid)
-        return {"status": "ignored", "reason": "unknown call_sid"}
+    if not dispatch_id or not donor_id:
+        logger.warning("Twilio callback missing query params for SID: %s", CallSid)
+        return {"status": "ignored", "reason": "missing params"}
 
-    dispatch_id, donor_id = lookup
-
-    # Map Exotel status to our enum.
-    mapped_status: Optional[CallStatus] = _EXOTEL_STATUS_MAP.get(
-        Status.lower(), CallStatus.DECLINED
+    # Map Twilio status to our enum.
+    mapped_status: Optional[CallStatus] = _TWILIO_STATUS_MAP.get(
+        CallStatus.lower(), CallStatus.DECLINED
     )
 
     if mapped_status is None:
-        # Call is in-progress or completed (voice pipeline handles acceptance).
         logger.debug(
-            "Exotel status '%s' for SID %s — no status update emitted",
-            Status, CallSid,
+            "Twilio status '%s' for SID %s — no status update emitted",
+            CallStatus, CallSid,
         )
         return {"status": "ack", "call_sid": CallSid}
 
@@ -104,36 +119,27 @@ async def exotel_status_callback(
     return {"status": "ok", "call_sid": CallSid, "mapped_status": mapped_status.value}
 
 
-# ── WebSocket /ws/exotel/audio-stream ─────────────────────────────
+# ── WebSocket /ws/twilio/audio-stream ─────────────────────────────
 
-@router.websocket("/ws/exotel/audio-stream")
-async def exotel_audio_stream(
+@router.websocket("/ws/twilio/audio-stream")
+async def twilio_audio_stream(
     websocket: WebSocket,
-    call_sid: str = Query(default=""),
+    dispatch_id: str = Query(default=""),
+    donor_id: str = Query(default=""),
 ):
     """
-    WebSocket endpoint for Exotel to stream live call audio.
-
-    Exotel sends raw audio frames; we pipe them through the
-    VoiceSession (Sarvam STT → intent → Sarvam TTS) and send
-    synthesized audio responses back.
-
-    Query params:
-        call_sid — The Exotel call SID for this audio stream.
+    WebSocket endpoint for Twilio to stream live call audio.
+    Twilio sends JSON messages with Base64 audio chunks.
     """
     from backend.services.voice_pipeline import active_sessions, VoiceSession
 
     await websocket.accept()
-    logger.info("Audio stream WebSocket connected (call_sid=%s)", call_sid)
+    logger.info("Audio stream WebSocket connected (dispatch_id=%s, donor_id=%s)", dispatch_id, donor_id)
 
-    # Look up dispatch context.
-    lookup = await dispatch_store.get_by_call_sid(call_sid)
-    if not lookup:
-        logger.warning("Audio stream for unknown call SID: %s — closing", call_sid)
-        await websocket.close(code=1008, reason="Unknown call SID")
+    if not dispatch_id or not donor_id:
+        logger.warning("Audio stream missing query params — closing")
+        await websocket.close(code=1008, reason="Missing params")
         return
-
-    dispatch_id, donor_id = lookup
 
     # Fetch donor info for language selection.
     donor = await dispatch_store.get_donor(dispatch_id, donor_id)
@@ -144,9 +150,9 @@ async def exotel_audio_stream(
     hospital_id = dispatch.get("hospital_id", "") if dispatch else ""
     blood_group = dispatch.get("blood_group", "") if dispatch else ""
 
-    # Create or retrieve the voice session.
+    # Create session without CallSid initially (we'll get it from the 'start' event)
     session = VoiceSession(
-        call_sid=call_sid,
+        call_sid="", 
         dispatch_id=dispatch_id,
         donor_id=donor_id,
         donor_name=donor.get("name", "Donor") if donor else "Donor",
@@ -154,71 +160,107 @@ async def exotel_audio_stream(
         hospital_id=hospital_id,
         blood_group=blood_group,
     )
-    active_sessions[call_sid] = session
+    
+    stream_sid = ""
 
     try:
         while True:
-            # Receive audio chunk from Exotel.
-            data = await websocket.receive_bytes()
+            data_str = await websocket.receive_text()
+            msg = json.loads(data_str)
+            
+            if msg["event"] == "start":
+                stream_sid = msg["start"]["streamSid"]
+                call_sid = msg["start"]["callSid"]
+                session.call_sid = call_sid
+                active_sessions[call_sid] = session
+                logger.info("Twilio stream started. StreamSid: %s, CallSid: %s", stream_sid, call_sid)
+                
+                # Send the greeting immediately when stream starts
+                greeting_audio, _ = await session.handle_audio_chunk(b"")
+                if greeting_audio:
+                    out_msg = {
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": base64.b64encode(greeting_audio).decode("utf-8")}
+                    }
+                    await websocket.send_text(json.dumps(out_msg))
+                    
+            elif msg["event"] == "media":
+                audio_bytes = base64.b64decode(msg["media"]["payload"])
+                
+                # Process through the voice pipeline.
+                response_audio, intent = await session.handle_audio_chunk(audio_bytes)
 
-            # Process through the voice pipeline.
-            response_audio, intent = await session.handle_audio_chunk(data)
+                # If the pipeline produced a TTS response, send it back.
+                if response_audio:
+                    out_msg = {
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": base64.b64encode(response_audio).decode("utf-8")}
+                    }
+                    await websocket.send_text(json.dumps(out_msg))
 
-            # If the pipeline produced a TTS response, send it back.
-            if response_audio:
-                await websocket.send_bytes(response_audio)
-
-            # If an intent was resolved, update the dispatch state.
-            if intent in ("accepted", "declined"):
-                new_status = (
-                    CallStatus.ACCEPTED if intent == "accepted"
-                    else CallStatus.DECLINED
-                )
-                await dispatch_store.update_donor_status(
-                    dispatch_id, donor_id, new_status,
-                    eta_minutes=session.eta_minutes,
-                )
-                # Broadcast to dashboard.
-                ws_update = DonorStatusUpdate(
-                    donor_id=donor_id,
-                    name=session.donor_name,
-                    status=new_status,
-                    eta_minutes=session.eta_minutes,
-                )
-                await manager.broadcast(dispatch_id, ws_update)
-                logger.info(
-                    "Voice intent '%s' for donor %s (dispatch %s)",
-                    intent, donor_id, dispatch_id,
-                )
-
-                # ── Post-acceptance routing ───────────────────────
-                # The LangGraph graph finishes before async calls
-                # resolve, so we trigger routing directly here.
-                if intent == "accepted":
-                    await _route_accepted_donor(
-                        dispatch_id=dispatch_id,
+                # If an intent was resolved, update the dispatch state.
+                if intent in ("accepted", "declined"):
+                    new_status = (
+                        CallStatus.ACCEPTED if intent == "accepted"
+                        else CallStatus.DECLINED
+                    )
+                    await dispatch_store.update_donor_status(
+                        dispatch_id, donor_id, new_status,
+                        eta_minutes=session.eta_minutes,
+                    )
+                    # Broadcast to dashboard.
+                    ws_update = DonorStatusUpdate(
                         donor_id=donor_id,
-                        donor=donor,
-                        dispatch=dispatch,
+                        name=session.donor_name,
+                        status=new_status,
+                        eta_minutes=session.eta_minutes,
+                    )
+                    await manager.broadcast(dispatch_id, ws_update)
+                    logger.info(
+                        "Voice intent '%s' for donor %s (dispatch %s)",
+                        intent, donor_id, dispatch_id,
                     )
 
-                # Deliver a closing message and end the session.
-                if intent == "accepted":
-                    closing_audio = await session.generate_closing_message(accepted=True)
-                else:
-                    closing_audio = await session.generate_closing_message(accepted=False)
-                if closing_audio:
-                    await websocket.send_bytes(closing_audio)
+                    # ── Post-acceptance routing ───────────────────────
+                    if intent == "accepted":
+                        await _route_accepted_donor(
+                            dispatch_id=dispatch_id,
+                            donor_id=donor_id,
+                            donor=donor,
+                            dispatch=dispatch,
+                        )
+
+                    # Deliver a closing message and end the session.
+                    if intent == "accepted":
+                        closing_audio = await session.generate_closing_message(accepted=True)
+                    else:
+                        closing_audio = await session.generate_closing_message(accepted=False)
+                        
+                    if closing_audio:
+                        out_msg = {
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": base64.b64encode(closing_audio).decode("utf-8")}
+                        }
+                        await websocket.send_text(json.dumps(out_msg))
+                        
+                    break
+
+            elif msg["event"] == "stop":
+                logger.info("Twilio stream stopped for StreamSid: %s", stream_sid)
                 break
 
     except WebSocketDisconnect:
-        logger.info("Audio stream disconnected (call_sid=%s)", call_sid)
+        logger.info("Audio stream disconnected")
     except Exception as exc:
-        logger.error("Audio stream error (call_sid=%s): %s", call_sid, exc)
+        logger.error("Audio stream error: %s", exc)
     finally:
         # Cleanup the session.
-        active_sessions.pop(call_sid, None)
-        logger.debug("Voice session cleaned up for call_sid=%s", call_sid)
+        if session.call_sid:
+            active_sessions.pop(session.call_sid, None)
+            logger.debug("Voice session cleaned up for call_sid=%s", session.call_sid)
 
 
 # ── Post-acceptance routing (called from audio stream) ────────────
@@ -229,21 +271,8 @@ async def _route_accepted_donor(
     donor: Optional[dict],
     dispatch: Optional[dict],
 ) -> None:
-    """
-    Trigger post-acceptance routing for a donor who accepted via
-    the AI voice call.
-
-    This function runs the same logic as ``route_donor_node`` in
-    the LangGraph graph, but is invoked directly from the audio
-    stream handler because calls resolve asynchronously after the
-    graph has already completed.
-
-    Routes:
-      • has_app=True  → Expo push notification with hospital coords
-      • has_app=False → SMS with web tracking link
-    """
     from backend.db_services import get_donor_push_token
-    from backend.services.exotel_service import send_sms
+    from backend.services.twilio_service import send_sms
     from backend.services.push_service import send_dispatch_notification
 
     if not donor or not dispatch:
@@ -258,7 +287,6 @@ async def _route_accepted_donor(
     blood_group = dispatch.get("blood_group", "")
 
     if has_app:
-        # Native path — Expo push notification.
         try:
             push_token = await get_donor_push_token(donor_id)
             if push_token:

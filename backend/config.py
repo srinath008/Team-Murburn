@@ -27,12 +27,10 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
 
-    # ── Exotel Telephony ──────────────────────────────────────────
-    exotel_api_key: str = ""
-    exotel_api_token: str = ""
-    exotel_sid: str = ""
-    exotel_subdomain: str = ""
-    exotel_caller_id: str = ""
+    # ── Twilio Telephony (Replaced Exotel) ──────────────────────
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
 
     # ── Sarvam AI (STT / TTS) ────────────────────────────────────
     sarvam_api_key: str = ""
@@ -40,14 +38,14 @@ class Settings(BaseSettings):
 
     # ── App Settings ─────────────────────────────────────────────
     app_env: str = "development"
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:19006"]
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:19006", "http://localhost:8081"]
     server_base_url: str = "http://localhost:8000"
 
     # ── Expo Push Notifications ──────────────────────────────────
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
 
-    # ── Exotel Audio Streaming ───────────────────────────────────
-    exotel_audio_ws_path: str = "/ws/exotel/audio-stream"
+    # ── Twilio Audio Streaming ───────────────────────────────────
+    twilio_audio_ws_path: str = "/ws/twilio/audio-stream"
 
     # pydantic-settings doesn't auto-parse JSON lists from env vars,
     # so we accept a raw string and coerce it ourselves.

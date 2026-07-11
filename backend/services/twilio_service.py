@@ -1,8 +1,8 @@
 """
-Exotel telephony service.
+Twilio telephony service.
 
 Manages outbound call initiation, webhook handling, and SMS dispatch
-via the Exotel API.  All I/O is async (httpx).
+via the Twilio API. All I/O is async (httpx).
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ async def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(
-            base_url=f"https://{settings.exotel_subdomain}.exotel.com",
-            auth=(settings.exotel_api_key, settings.exotel_api_token),
+            base_url="https://api.twilio.com/2010-04-01",
+            auth=(settings.twilio_account_sid, settings.twilio_auth_token),
             timeout=30.0,
         )
     return _client
@@ -39,42 +39,32 @@ async def initiate_call(
     callback_url: str,
 ) -> Dict[str, Any]:
     """
-    Place a single outbound call to `donor.phone` via Exotel.
-
-    Parameters
-    ----------
-    donor : DonorNode
-        The donor to call.
-    dispatch_id : str
-        Correlation ID so the webhook can tie the call back to a dispatch.
-    callback_url : str
-        The public URL Exotel should POST status updates to.
-
-    Returns
-    -------
-    dict   Exotel's API response body (call SID, status, etc.).
+    Place a single outbound call to `donor.phone` via Twilio.
     """
     client = await _get_client()
+    
+    twiml_url = f"{settings.server_base_url}/api/twilio/twiml?dispatch_id={dispatch_id}&donor_id={donor.id}"
+    status_cb = f"{settings.server_base_url}/api/twilio/status-callback?dispatch_id={dispatch_id}&donor_id={donor.id}"
+
     payload = {
-        "From": donor.phone,
-        "CallerId": settings.exotel_caller_id,
-        "CallType": "trans",
-        "StatusCallback": callback_url,
-        "StatusCallbackEvents": ["terminal", "answered"],
-        "CustomField": dispatch_id,
+        "To": donor.phone,
+        "From": settings.twilio_phone_number,
+        "Url": twiml_url,
+        "StatusCallback": status_cb,
+        "StatusCallbackEvent": "completed", 
     }
 
     try:
         resp = await client.post(
-            f"/v1/Accounts/{settings.exotel_sid}/Calls/connect.json",
+            f"/Accounts/{settings.twilio_account_sid}/Calls.json",
             data=payload,
         )
         resp.raise_for_status()
         data = resp.json()
-        logger.info("Call initiated to %s — SID %s", donor.phone, data.get("Call", {}).get("Sid"))
+        logger.info("Call initiated to %s — SID %s", donor.phone, data.get("sid"))
         return data
     except httpx.HTTPStatusError as exc:
-        logger.error("Exotel API error for %s: %s", donor.phone, exc.response.text)
+        logger.error("Twilio API error for %s: %s", donor.phone, exc.response.text)
         raise
     except httpx.RequestError as exc:
         logger.error("Network error calling %s: %s", donor.phone, exc)
@@ -86,10 +76,6 @@ async def initiate_bulk_calls(
     dispatch_id: str,
     callback_url: str,
 ) -> List[Dict[str, Any]]:
-    """
-    Fire concurrent outbound calls to every donor in the list.
-    Returns a list of Exotel response dicts (one per donor).
-    """
     import asyncio
 
     tasks = [
@@ -108,20 +94,16 @@ async def initiate_bulk_calls(
 
 
 async def send_sms(phone: str, message: str) -> Dict[str, Any]:
-    """
-    Send a transactional SMS to `phone` via Exotel (fallback path
-    for donors without the mobile app).
-    """
     client = await _get_client()
     payload = {
-        "From": settings.exotel_caller_id,
+        "From": settings.twilio_phone_number,
         "To": phone,
         "Body": message,
     }
 
     try:
         resp = await client.post(
-            f"/v1/Accounts/{settings.exotel_sid}/Sms/send.json",
+            f"/Accounts/{settings.twilio_account_sid}/Messages.json",
             data=payload,
         )
         resp.raise_for_status()
@@ -129,12 +111,11 @@ async def send_sms(phone: str, message: str) -> Dict[str, Any]:
         logger.info("SMS sent to %s", phone)
         return data
     except httpx.HTTPStatusError as exc:
-        logger.error("Exotel SMS error for %s: %s", phone, exc.response.text)
+        logger.error("Twilio SMS error for %s: %s", phone, exc.response.text)
         raise
 
 
 async def close() -> None:
-    """Gracefully close the httpx client (call on app shutdown)."""
     global _client
     if _client and not _client.is_closed:
         await _client.aclose()

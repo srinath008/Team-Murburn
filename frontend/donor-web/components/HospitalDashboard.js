@@ -230,7 +230,13 @@ export default function HospitalDashboard() {
     setIsSubmitting(true); setSubmitStatus(null);
     if (!patientName.trim()) { setSubmitStatus({ success: false, message: 'Patient Name is required for logging.'}); setIsSubmitting(false); return; }
     
-    const payload = { hospital_id: hospitalProfile?.id, blood_group: bloodGroup, urgency, coordinates: { lat: 12.97, lng: 77.59 }, address, patient_name: patientName };
+    let coords = { lat: 12.9734944, lng: 77.6151603 }; // Default to Bengaluru (Priya's exact location)
+    if (address.toLowerCase().includes('chennai')) {
+      coords = { lat: 13.0317061, lng: 80.240815 }; // Chennai (Arun's exact location)
+    } else if (address.toLowerCase().includes('tirupur')) {
+      coords = { lat: 11.1085, lng: 77.3411 }; // Tirupur
+    }
+    const payload = { hospital_id: hospitalProfile?.id, blood_group: bloodGroup, urgency, coordinates: coords, address, patient_name: patientName };
     addLog(`Sending Emergency Trigger POST to /api/dispatch: ${JSON.stringify(payload)}`);
     try {
       const response = await fetch(`http://${serverUrl}/api/dispatch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
