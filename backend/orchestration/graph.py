@@ -48,7 +48,7 @@ class DispatchState(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     hospital_id: str = ""
     blood_group: str = ""
-    urgency: str = "high"
+    urgency: str = "urgent"
     lat: float = 0.0
     lng: float = 0.0
     donors: Dict[str, DonorCallState] = Field(default_factory=dict)

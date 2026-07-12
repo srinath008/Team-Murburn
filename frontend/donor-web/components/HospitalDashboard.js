@@ -63,7 +63,7 @@ export default function HospitalDashboard() {
   // Registration fields
   const [regName, setRegName] = useState('');
   const [regLocation, setRegLocation] = useState('');
-  const [regPhone, setRegPhone] = useState('');
+  const [regPhone, setRegPhone] = useState('+91 ');
   const [regPassword, setRegPassword] = useState('');
 
   const [authError, setAuthError] = useState('');
@@ -140,34 +140,23 @@ export default function HospitalDashboard() {
     
     setAuthLoading(true);
     try {
-      // Fetch JWT Token
       const formData = new URLSearchParams();
-      formData.append('username', loginId);
+      formData.append('username', loginId.toUpperCase());
       formData.append('password', password);
       
-      let token = "mock-token";
-      try {
-        const tokenRes = await fetch(`${API_URL}/api/auth/token`, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-           body: formData.toString()
-        });
-        if (tokenRes.ok) {
-           const tokenData = await tokenRes.json();
-           token = tokenData.access_token;
-        }
-      } catch (err) {
-        console.warn("Auth server unreachable, falling back to local simulation.", err);
+      const res = await fetch(`${API_URL}/api/auth/token`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+         body: formData.toString()
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'Login failed');
       }
       
-      const savedData = await AsyncStorage.getItem(`@hosp_profile_${loginId.toUpperCase()}`);
-      let user;
-      if (savedData) {
-         user = JSON.parse(savedData);
-      } else {
-         user = { id: loginId.toUpperCase(), name: 'Central Hospital', location: 'Main Ward', phone: 'N/A' };
-      }
-      user.token = token;
+      const data = await res.json();
+      const user = { ...data.user, token: data.access_token };
       
       await AsyncStorage.setItem('@hosp_user', JSON.stringify(user));
       setHospitalProfile(user);
@@ -185,21 +174,35 @@ export default function HospitalDashboard() {
     if (!regName || !regLocation || !regPhone || !regPassword) return setAuthError('Please fill out all registration fields');
     
     setAuthLoading(true);
-    setTimeout(async () => {
-      try {
-        const generatedId = `HOSP-${Math.floor(100 + Math.random() * 900)}`;
-        const user = { id: generatedId, name: regName, location: regLocation, phone: regPhone };
-        
-        await AsyncStorage.setItem(`@hosp_profile_${generatedId}`, JSON.stringify({ ...user, password: regPassword }));
-        await AsyncStorage.setItem('@hosp_user', JSON.stringify(user));
-        
-        setHospitalProfile(user);
-        setAddress(user.location || '');
-        setIsLoggedIn(true);
-        loadAnalytics(user.id);
-      } catch(e) {}
-      setAuthLoading(false);
-    }, 1200);
+    try {
+      const generatedId = `HOSP-${Math.floor(100 + Math.random() * 900)}`;
+      
+      const res = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: generatedId,
+          name: regName,
+          location: regLocation,
+          phone: regPhone,
+          password: regPassword
+        })
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'Registration failed');
+      }
+      
+      // Auto login after successful signup
+      setLoginId(generatedId);
+      setPassword(regPassword);
+      setIsLoginMode(true);
+      setAuthError(`Success! Your Hospital ID is ${generatedId}. Please login.`);
+    } catch(e) {
+      setAuthError('Signup failed: ' + e.message);
+    }
+    setAuthLoading(false);
   };
 
   const handleLogout = async () => {
@@ -402,7 +405,7 @@ export default function HospitalDashboard() {
               <Text style={s.label}>IN-CHARGE NUMBER</Text>
               <View style={s.inputWrapper}>
                  <Phone size={18} color={colors.textMuted} style={s.inputIcon} />
-                 <TextInput value={regPhone} onChangeText={setRegPhone} placeholder="e.g. +91 9876543210" placeholderTextColor={colors.textMuted} style={s.inputWithIcon} keyboardType="phone-pad" />
+                 <TextInput value={regPhone} onChangeText={(text) => setRegPhone(text.replace(/[^0-9+ ]/g, ''))} placeholder="e.g. +91 9876543210" placeholderTextColor={colors.textMuted} style={s.inputWithIcon} keyboardType="phone-pad" maxLength={14} />
               </View>
               
               <Text style={s.label}>CREATE PASSWORD</Text>
@@ -512,17 +515,22 @@ export default function HospitalDashboard() {
                   <TextInput value={patientName} onChangeText={setPatientName} style={s.input} placeholder="e.g. John Doe" placeholderTextColor={colors.textMuted} />
 
                   <Text style={s.label}>BLOOD GROUP REQUIRED</Text>
-                  <TextInput value={bloodGroup} onChangeText={setBloodGroup} style={s.input} placeholder="O-" placeholderTextColor={colors.textMuted} />
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                      <TouchableOpacity key={bg} onPress={() => setBloodGroup(bg)} style={[s.urgencyBtn, { padding: 8, flex: 0, minWidth: 48 }, bloodGroup === bg && s.urgencyBtnActive]}>
+                        <Text style={[s.urgencyText, bloodGroup === bg && s.urgencyTextActive]}>{bg}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
                   <Text style={s.label}>URGENCY LEVEL</Text>
                   <View style={s.urgencyRow}>
-                    <TouchableOpacity onPress={() => setUrgency('critical')} style={[s.urgencyBtn, urgency === 'critical' && s.urgencyBtnActive]}>
-                      {urgency === 'critical' && <ShieldAlert size={14} color={colors.primary} style={{ marginRight: 6 }} />}
-                      <Text style={[s.urgencyText, urgency === 'critical' && s.urgencyTextActive]}>Critical</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setUrgency('high')} style={[s.urgencyBtn, urgency === 'high' && s.urgencyBtnActive]}>
-                      <Text style={[s.urgencyText, urgency === 'high' && s.urgencyTextActive]}>High</Text>
-                    </TouchableOpacity>
+                    {['routine', 'urgent', 'critical'].map(u => (
+                      <TouchableOpacity key={u} onPress={() => setUrgency(u)} style={[s.urgencyBtn, urgency === u && s.urgencyBtnActive]}>
+                        {urgency === 'critical' && u === 'critical' && <ShieldAlert size={14} color={colors.primary} style={{ marginRight: 6 }} />}
+                        <Text style={[s.urgencyText, urgency === u && s.urgencyTextActive, {textTransform: 'capitalize'}]}>{u}</Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
 
                   <Text style={s.label}>DELIVERY LOCATION / WARD</Text>
@@ -531,8 +539,12 @@ export default function HospitalDashboard() {
                   <Text style={s.label}>UNITS REQUIRED</Text>
                   <View style={s.unitsBox}>
                     <TouchableOpacity onPress={() => setUnits(u => String(Math.max(1, parseInt(u||0)-1)))} style={s.unitsBtn}><Text style={s.unitsBtnText}>-</Text></TouchableOpacity>
-                    <TextInput value={units} onChangeText={setUnits} style={s.unitsInput} keyboardType="numeric" />
-                    <TouchableOpacity onPress={() => setUnits(u => String(parseInt(u||0)+1))} style={s.unitsBtn}><Text style={s.unitsBtnText}>+</Text></TouchableOpacity>
+                    <TextInput value={units} onChangeText={(text) => {
+                      const num = parseInt(text.replace(/[^0-9]/g, ''));
+                      if (!isNaN(num) && num <= 99) setUnits(String(num));
+                      else if (text === '') setUnits('');
+                    }} style={s.unitsInput} keyboardType="numeric" maxLength={2} />
+                    <TouchableOpacity onPress={() => setUnits(u => String(Math.min(99, parseInt(u||0)+1)))} style={s.unitsBtn}><Text style={s.unitsBtnText}>+</Text></TouchableOpacity>
                   </View>
 
                   <TouchableOpacity onPress={handleTriggerEmergency} disabled={isSubmitting} style={s.submitBtn}>
@@ -572,8 +584,7 @@ export default function HospitalDashboard() {
                   <View style={s.listHeader}>
                     <Text style={[s.listCol, { flex: 4 }]}>DONOR DETAILS</Text>
                     <Text style={[s.listCol, { flex: 2 }]}>GROUP</Text>
-                    <Text style={[s.listCol, { flex: 3 }]}>AI CONTACT STATUS</Text>
-                    <Text style={[s.listCol, { flex: 3, textAlign: 'right' }]}>ETA / RESPONSE</Text>
+                    <Text style={[s.listCol, { flex: 6 }]}>AI CONTACT STATUS</Text>
                   </View>
 
                   <ScrollView style={s.listContainer} contentContainerStyle={{ padding: 16 }}>
@@ -595,22 +606,13 @@ export default function HospitalDashboard() {
                             <View style={s.groupBadge}><Text style={s.groupBadgeText}>{donor.group}</Text></View>
                           </View>
 
-                          <View style={{ flex: 3, flexDirection: 'row', alignItems: 'center' }}>
-                            {info.pulse ? <PulseDot color={info.color} size={10} /> : <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: info.color }} />}
-                            <Text style={[s.statusText, { color: info.color, marginLeft: 8 }]}>{info.text}</Text>
-                          </View>
-
-                          <View style={{ flex: 3, alignItems: 'flex-end', justifyContent: 'center' }}>
-                            {donor.eta_minutes !== null ? (
-                              <>
-                                <Text style={s.etaValue}>{donor.eta_minutes} mins</Text>
-                                <Text style={s.etaLabel}>{donor.status === 'ringing' ? 'If accepted' : 'En route'}</Text>
-                              </>
-                            ) : (
-                              <Text style={s.etaLabel}>System bypassed</Text>
-                            )}
+                          <View style={{ flex: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              {info.pulse ? <PulseDot color={info.color} size={10} /> : <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: info.color }} />}
+                              <Text style={[s.statusText, { color: info.color, marginLeft: 8 }]}>{info.text}</Text>
+                            </View>
                             {donor.status === 'accepted' && (
-                              <TouchableOpacity onPress={() => handleLogDonation(donor.donor_id)} style={{ marginTop: 6, backgroundColor: colors.secondary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                              <TouchableOpacity onPress={() => handleLogDonation(donor.donor_id)} style={{ backgroundColor: colors.secondary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 4 }}>
                                 <Text style={{ color: '#000', fontSize: 10, fontWeight: 'bold' }}>MARK DONATED</Text>
                               </TouchableOpacity>
                             )}
@@ -686,9 +688,9 @@ export default function HospitalDashboard() {
 
           {activeTab === 'map' && (
              <View style={{ flex: 1, backgroundColor: colors.surfaceSunken, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                <View style={{ position: 'absolute', bottom: 48, left: 16, zIndex: 10, backgroundColor: 'rgba(11, 19, 38, 0.9)', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-                   <Text style={{ color: colors.onSurface, fontSize: 18, fontWeight: 'bold' }}>Live Donor Network Map</Text>
-                   <Text style={{ color: colors.textMuted, marginTop: 4, fontSize: 12 }}>Showing active donors near: {address}</Text>
+                <View style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, backgroundColor: 'rgba(11, 19, 38, 0.9)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                   <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: 'bold' }}>Live Donor Network Map</Text>
+                   <Text style={{ color: colors.textMuted, marginTop: 2, fontSize: 10 }}>Showing active donors near: {address}</Text>
                 </View>
                 
                 {Platform.OS === 'web' ? (

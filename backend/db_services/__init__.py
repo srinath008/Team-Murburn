@@ -397,6 +397,37 @@ async def register_donor(
 
 
 # -----------------------------------------------------------------------------
+# 5.5 DELETE DONOR
+# -----------------------------------------------------------------------------
+_DELETE_DONOR_QUERY = """
+MATCH (d:Donor {phone: $phone})
+DETACH DELETE d
+RETURN count(d) AS deleted_count
+"""
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
+async def delete_donor(phone: str) -> bool:
+    """
+    Delete a donor node by phone number.
+    Returns True if a node was deleted, False otherwise.
+    """
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_DELETE_DONOR_QUERY, phone=phone)
+        record = await result.single()
+
+    deleted_count = record["deleted_count"] if record else 0
+    if deleted_count > 0:
+        logger.info("Donor deleted: phone=%s", phone)
+        return True
+    return False
+
+# -----------------------------------------------------------------------------
 # 6. DISPATCH STORE INTEGRATION
 # -----------------------------------------------------------------------------
 _CREATE_DISPATCH_QUERY = """
@@ -560,3 +591,31 @@ async def db_summary() -> list[dict]:
     async with driver.session() as session:
         result = await session.run(_SUMMARY_QUERY)
         return [record.data() async for record in result]
+
+_CREATE_HOSPITAL_QUERY = """
+MERGE (h:Hospital {id: $id})
+SET h.name = $name,
+    h.location = $location,
+    h.phone = $phone,
+    h.password_hash = $password_hash
+RETURN h
+"""
+
+async def db_create_hospital(id: str, name: str, location: str, phone: str, password_hash: str) -> dict:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_CREATE_HOSPITAL_QUERY, id=id, name=name, location=location, phone=phone, password_hash=password_hash)
+        record = await result.single()
+        return record["h"] if record else None
+
+_GET_HOSPITAL_QUERY = """
+MATCH (h:Hospital {id: $id})
+RETURN h
+"""
+
+async def db_get_hospital_by_id(id: str) -> Optional[dict]:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_HOSPITAL_QUERY, id=id)
+        record = await result.single()
+        return record["h"] if record else None

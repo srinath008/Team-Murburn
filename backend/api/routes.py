@@ -15,7 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 
 from backend.api.websockets import manager
 from backend.api.auth import get_current_hospital
-from backend.db_services import find_eligible_donors, update_donation_date, register_donor, get_donor_by_phone
+from backend.db_services import find_eligible_donors, update_donation_date, register_donor, get_donor_by_phone, delete_donor
 from backend.orchestration.graph import DispatchState, dispatch_graph
 from backend.schemas.models import (
     CallStatus,
@@ -204,6 +204,26 @@ async def get_donor_profile(phone: str):
     except Exception as exc:
         logger.exception("Failed to get donor profile: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to get donor profile")
+
+
+# ── DELETE /api/donor/profile/{phone} ───────────────────────────────
+
+@router.delete("/donor/profile/{phone}")
+async def remove_donor_profile(phone: str):
+    """
+    Called by the mobile app to delete the donor's profile from the DB.
+    """
+    try:
+        success = await delete_donor(phone)
+        if not success:
+            raise HTTPException(status_code=404, detail="Donor not found")
+            
+        return {"status": "ok", "message": "Donor successfully deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to delete donor profile: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete donor profile")
 
 
 # ── GET /api/health ───────────────────────────────────────────────

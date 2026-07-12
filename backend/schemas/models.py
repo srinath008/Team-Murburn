@@ -20,8 +20,9 @@ from pydantic import BaseModel, Field
 
 class Urgency(str, Enum):
     """Allowed urgency levels for a dispatch request."""
+    ROUTINE = "routine"
+    URGENT = "urgent"
     CRITICAL = "critical"
-    HIGH = "high"
 
 
 class CallStatus(str, Enum):

@@ -48,7 +48,6 @@ export default function DonorApp() {
   const [daysRemaining, setDaysRemaining] = useState(0);
   const [daysElapsed, setDaysElapsed] = useState(0);
   const [progressPercent, setProgressPercent] = useState(100);
-  const [simDateText, setSimDateText] = useState('Never donated');
 
   // ─── DONATION LOG STATE ───
   const [donationLog, setDonationLog] = useState([]);
@@ -74,6 +73,9 @@ export default function DonorApp() {
     setAuthError('');
     if (!loginId.trim() || !password.trim()) {
       return setAuthError('Please enter both Login ID and Password');
+    }
+    if (loginId.trim().length !== 10 || !/^\d+$/.test(loginId.trim())) {
+      return setAuthError('Mobile number must be exactly 10 digits');
     }
     setAuthLoading(true);
     try {
@@ -252,13 +254,20 @@ export default function DonorApp() {
 
   const clearProfile = async () => {
     try {
+      const phoneParam = currentUser.id.startsWith('+91') ? currentUser.id : `+91${currentUser.id}`;
+      await axios.delete(`${SERVER_BASE_URL}/api/donor/profile/${encodeURIComponent(phoneParam)}`);
+      
       await AsyncStorage.removeItem(getProfileKey());
       await AsyncStorage.removeItem(getLogKey());
       setName(''); setPhone(''); setBloodGroup('O+'); setCustomBloodGroup(''); setLanguage('English');
       setLat(DEFAULT_LAT); setLng(DEFAULT_LNG); setAddress(''); setLocationSource(null);
       setProfilePic(null); setLastDonatedDate(null); setDonationLog([]);
       setIsRegistered(false); setIsEditing(false);
-    } catch (err) { Alert.alert('Error', 'Failed to clear profile'); }
+      Alert.alert('Profile Deleted', 'Your profile has been removed completely.');
+    } catch (err) { 
+      console.error(err);
+      Alert.alert('Error', 'Failed to clear profile'); 
+    }
   };
 
   const handleNameChange = (text) => {
@@ -373,24 +382,12 @@ export default function DonorApp() {
     setLng(DEFAULT_LNG);
   };
 
-  const openInMaps = () => {
-    const url = Platform.select({
-      android: `geo:${lat},${lng}?q=${lat},${lng}(${encodeURIComponent(address || 'Donor Location')})`,
-      ios: `maps:0,0?q=${lat},${lng}`,
-      default: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-    });
-    Linking.openURL(url).catch(() => {
-      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
-    });
-  };
-
   // ─── DONATION MILESTONES & LOGGING ───
   const calculateCooldown = () => {
     if (!lastDonatedDate) {
       setDaysRemaining(0);
       setDaysElapsed(COOLDOWN_DAYS);
       setProgressPercent(100);
-      setSimDateText('Never donated');
       return;
     }
     const today = new Date();
@@ -403,48 +400,6 @@ export default function DonorApp() {
     setDaysElapsed(diffDays);
     setDaysRemaining(remaining);
     setProgressPercent(progress);
-    setSimDateText(lastDonatedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }));
-  };
-
-  const simulateCooldown = async (daysAgo) => {
-    if (daysAgo === null) {
-      setLastDonatedDate(null);
-      setDonationLog([]);
-      saveMockDonationDate(null, []);
-      return;
-    }
-
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() - daysAgo);
-    setLastDonatedDate(targetDate);
-
-    // Log the simulated donation
-    let hospitalName = "City Emergency Hospital";
-    if (daysAgo > 20) hospitalName = "Apollo Speciality Care";
-    if (daysAgo > 50) hospitalName = "Global Blood Bank";
-
-    const newEntry = {
-      id: Date.now().toString() + Math.random().toString(),
-      date: targetDate.toISOString(),
-      hospital: hospitalName,
-    };
-
-    const updatedLog = [newEntry, ...donationLog];
-    setDonationLog(updatedLog);
-
-    saveMockDonationDate(targetDate, updatedLog);
-  };
-
-  const saveMockDonationDate = async (date, updatedLog) => {
-    try {
-      const savedProfile = await AsyncStorage.getItem(getProfileKey());
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        profile.last_donated_date = date ? date.toISOString() : null;
-        await AsyncStorage.setItem(getProfileKey(), JSON.stringify(profile));
-      }
-      await AsyncStorage.setItem(getLogKey(), JSON.stringify(updatedLog));
-    } catch (err) { Alert.alert('Error', 'Failed to update donation date'); }
   };
 
   const getNextEligibleDateText = () => {
@@ -925,8 +880,4 @@ const s = StyleSheet.create({
   logDateText: { color: '#64748b', fontSize: 11, marginTop: 2 },
   logBadge: { backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#a7f3d0' },
   logBadgeText: { color: '#059669', fontSize: 9, fontWeight: '800' },
-
-  simGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  simBtn: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, flexBasis: '48%', alignItems: 'center' },
-  simBtnText: { color: '#334155', fontWeight: '700', fontSize: 12 },
 });
