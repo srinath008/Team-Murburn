@@ -9,19 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    services:
-      neo4j:
-        image: neo4j:5
-        env:
-          NEO4J_AUTH: neo4j/password
-        ports:
-          - 7687:7687
-        options: >-
-          --health-cmd "cypher-shell -u neo4j -p password 'RETURN 1'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
     - uses: actions/checkout@v4
@@ -44,4 +31,4 @@ jobs:
         NEO4J_PASSWORD: password
         JWT_SECRET: test_secret_for_ci
       run: |
-        PYTHONPATH=. pytest backend/tests/
+        python -m pytest backend/tests/
