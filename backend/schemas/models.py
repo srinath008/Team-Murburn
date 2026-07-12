@@ -56,6 +56,8 @@ class DispatchRequest(BaseModel):
     blood_group: str = Field(..., min_length=1, description="Required blood group, e.g. 'O-'")
     urgency: Urgency = Field(..., description="Urgency level of the request")
     coordinates: Coordinates
+    address: Optional[str] = Field(None, description="Text address of the hospital")
+    patient_name: Optional[str] = Field(None, description="Name of the patient")
 
 
 class DispatchResponse(BaseModel):
@@ -106,3 +108,13 @@ class DonationLog(BaseModel):
     donor_id: str = Field(..., description="Donor whose donation is being recorded")
     hospital_id: str = Field(..., description="Hospital where the donation occurred")
     notes: Optional[str] = Field(None, description="Optional clinical notes")
+
+
+class DonorRegistration(BaseModel):
+    """Payload from mobile app to register/update a donor."""
+    name: str = Field(..., description="Donor's full name")
+    phone: str = Field(..., description="Donor's phone number")
+    blood_group: str = Field(..., description="Blood group (e.g. O+)")
+    language: str = Field(default="english", description="Preferred language for AI voice")
+    lat: float = Field(..., description="Latitude")
+    lng: float = Field(..., description="Longitude")

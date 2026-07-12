@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
+    
+    sentry_dsn: str = ""
 
     # ── Sarvam AI (STT / TTS) ────────────────────────────────────
     sarvam_api_key: str = ""

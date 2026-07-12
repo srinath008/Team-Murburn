@@ -8,11 +8,13 @@ Start the server:
 from __future__ import annotations
 
 import logging
+import sentry_sdk
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.auth import router as auth_router
 from backend.api.callbacks import router as callback_router
 from backend.api.routes import router as api_router
 from backend.api.websockets import router as ws_router
@@ -26,6 +28,18 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+# ── Sentry Setup ──────────────────────────────────────────────────
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
+    logger.info("Sentry initialized")
+else:
+    logger.warning("SENTRY_DSN not set. Sentry is disabled.")
 
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────
@@ -68,7 +82,7 @@ app = FastAPI(
 # ── CORS ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,6 +92,7 @@ app.add_middleware(
 app.include_router(api_router)
 app.include_router(ws_router)
 app.include_router(callback_router)
+app.include_router(auth_router)
 
 
 # ── Root ──────────────────────────────────────────────────────────

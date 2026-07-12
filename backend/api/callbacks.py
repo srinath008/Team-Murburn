@@ -36,7 +36,7 @@ _TWILIO_STATUS_MAP = {
 }
 
 
-# ── GET /api/twilio/twiml ─────────────────────────────────────────
+# ── GET/POST /api/twilio/twiml ────────────────────────────────────
 
 from fastapi.responses import Response
 from backend.config import settings
@@ -46,18 +46,75 @@ from backend.config import settings
 async def get_twiml(dispatch_id: str = Query(default=""), donor_id: str = Query(default="")):
     """
     Returns the TwiML XML that instructs Twilio to connect the call
-    to our Audio Stream WebSocket.
+    to our Audio Stream WebSocket for real-time Sarvam AI conversational processing.
     """
     ws_url = settings.server_base_url.replace("http", "ws") + settings.twilio_audio_ws_path
     
-    # We can pass custom params by appending them to the stream URL
-    stream_url = f"{ws_url}?dispatch_id={dispatch_id}&donor_id={donor_id}"
+    import html
+    xml_safe_url = html.escape(ws_url)
     
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="{stream_url}" />
+        <Stream url="{xml_safe_url}">
+            <Parameter name="dispatch_id" value="{dispatch_id}" />
+            <Parameter name="donor_id" value="{donor_id}" />
+        </Stream>
     </Connect>
+</Response>"""
+    return Response(content=xml, media_type="application/xml")
+
+
+# ── POST /api/twilio/gather ──────────────────────────────────────
+
+@router.post("/api/twilio/gather")
+async def twilio_gather(
+    dispatch_id: str = Query(default=""),
+    donor_id: str = Query(default=""),
+    Digits: str = Form(default=""),
+):
+    """
+    Handles the donor's keypress response from <Gather>.
+    Press 1 = accepted, Press 2 (or anything else) = declined.
+    """
+    logger.info(
+        "Gather response: Digits=%s dispatch_id=%s donor_id=%s",
+        Digits, dispatch_id, donor_id,
+    )
+
+    if Digits == "1":
+        # Donor accepted
+        new_status = CallStatus.ACCEPTED
+        intent = "accepted"
+        say_text = "Thank you for accepting! A representative will contact you shortly with directions to the hospital. Your generosity saves lives."
+    else:
+        # Donor declined or invalid input
+        new_status = CallStatus.DECLINED
+        intent = "declined"
+        say_text = "Thank you for your time. We understand. Goodbye."
+
+    # Update dispatch store
+    if dispatch_id and donor_id:
+        await dispatch_store.update_donor_status(
+            dispatch_id, donor_id, new_status,
+            eta_minutes=15 if intent == "accepted" else None,
+        )
+
+        # Broadcast to dashboard via WebSocket
+        donor = await dispatch_store.get_donor(dispatch_id, donor_id)
+        donor_name = donor.get("name", "Unknown") if donor else "Unknown"
+        ws_update = DonorStatusUpdate(
+            donor_id=donor_id,
+            name=donor_name,
+            status=new_status,
+            eta_minutes=15 if intent == "accepted" else None,
+        )
+        await manager.broadcast(dispatch_id, ws_update)
+        logger.info("Broadcast %s for donor %s (dispatch %s)", intent, donor_id, dispatch_id)
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say>{say_text}</Say>
 </Response>"""
     return Response(content=xml, media_type="application/xml")
 
@@ -67,7 +124,7 @@ async def get_twiml(dispatch_id: str = Query(default=""), donor_id: str = Query(
 @router.post("/api/twilio/status-callback")
 async def twilio_status_callback(
     CallSid: str = Form(default=""),
-    CallStatus: str = Form(default=""),
+    CallStatus_param: str = Form(default="", alias="CallStatus"),
     dispatch_id: str = Query(default=""),
     donor_id: str = Query(default=""),
 ):
@@ -76,7 +133,7 @@ async def twilio_status_callback(
     """
     logger.info(
         "Twilio callback: SID=%s Status=%s dispatch_id=%s donor_id=%s",
-        CallSid, CallStatus, dispatch_id, donor_id,
+        CallSid, CallStatus_param, dispatch_id, donor_id,
     )
 
     if not dispatch_id or not donor_id:
@@ -85,13 +142,13 @@ async def twilio_status_callback(
 
     # Map Twilio status to our enum.
     mapped_status: Optional[CallStatus] = _TWILIO_STATUS_MAP.get(
-        CallStatus.lower(), CallStatus.DECLINED
+        CallStatus_param.lower(), CallStatus.DECLINED
     )
 
     if mapped_status is None:
         logger.debug(
             "Twilio status '%s' for SID %s — no status update emitted",
-            CallStatus, CallSid,
+            CallStatus_param, CallSid,
         )
         return {"status": "ack", "call_sid": CallSid}
 
@@ -122,11 +179,7 @@ async def twilio_status_callback(
 # ── WebSocket /ws/twilio/audio-stream ─────────────────────────────
 
 @router.websocket("/ws/twilio/audio-stream")
-async def twilio_audio_stream(
-    websocket: WebSocket,
-    dispatch_id: str = Query(default=""),
-    donor_id: str = Query(default=""),
-):
+async def twilio_audio_stream(websocket: WebSocket):
     """
     WebSocket endpoint for Twilio to stream live call audio.
     Twilio sends JSON messages with Base64 audio chunks.
@@ -134,34 +187,12 @@ async def twilio_audio_stream(
     from backend.services.voice_pipeline import active_sessions, VoiceSession
 
     await websocket.accept()
-    logger.info("Audio stream WebSocket connected (dispatch_id=%s, donor_id=%s)", dispatch_id, donor_id)
+    logger.info("Audio stream WebSocket connected")
 
-    if not dispatch_id or not donor_id:
-        logger.warning("Audio stream missing query params — closing")
-        await websocket.close(code=1008, reason="Missing params")
-        return
-
-    # Fetch donor info for language selection.
-    donor = await dispatch_store.get_donor(dispatch_id, donor_id)
-    language = donor.get("language", "english") if donor else "english"
-
-    # Get dispatch info for the hospital context.
-    dispatch = await dispatch_store.get_dispatch(dispatch_id)
-    hospital_id = dispatch.get("hospital_id", "") if dispatch else ""
-    blood_group = dispatch.get("blood_group", "") if dispatch else ""
-
-    # Create session without CallSid initially (we'll get it from the 'start' event)
-    session = VoiceSession(
-        call_sid="", 
-        dispatch_id=dispatch_id,
-        donor_id=donor_id,
-        donor_name=donor.get("name", "Donor") if donor else "Donor",
-        language=language,
-        hospital_id=hospital_id,
-        blood_group=blood_group,
-    )
-    
+    session = None
     stream_sid = ""
+    dispatch_id = ""
+    donor_id = ""
 
     try:
         while True:
@@ -171,9 +202,37 @@ async def twilio_audio_stream(
             if msg["event"] == "start":
                 stream_sid = msg["start"]["streamSid"]
                 call_sid = msg["start"]["callSid"]
-                session.call_sid = call_sid
+                
+                # Extract params passed via <Parameter> tags
+                custom_params = msg["start"].get("customParameters", {})
+                dispatch_id = custom_params.get("dispatch_id", "")
+                donor_id = custom_params.get("donor_id", "")
+                
+                if not dispatch_id or not donor_id:
+                    logger.warning("Audio stream missing customParameters — closing")
+                    await websocket.close(code=1008, reason="Missing params")
+                    return
+
+                # Fetch donor info for language selection.
+                donor = await dispatch_store.get_donor(dispatch_id, donor_id)
+                language = donor.get("language", "english") if donor else "english"
+
+                # Get dispatch info for the hospital context.
+                dispatch = await dispatch_store.get_dispatch(dispatch_id)
+                hospital_id = dispatch.get("hospital_id", "") if dispatch else ""
+                blood_group = dispatch.get("blood_group", "") if dispatch else ""
+
+                session = VoiceSession(
+                    call_sid=call_sid, 
+                    dispatch_id=dispatch_id,
+                    donor_id=donor_id,
+                    donor_name=donor.get("name", "Donor") if donor else "Donor",
+                    language=language,
+                    hospital_id=hospital_id,
+                    blood_group=blood_group,
+                )
                 active_sessions[call_sid] = session
-                logger.info("Twilio stream started. StreamSid: %s, CallSid: %s", stream_sid, call_sid)
+                logger.info("Twilio stream started. StreamSid: %s, CallSid: %s, donor: %s", stream_sid, call_sid, donor_id)
                 
                 # Send the greeting immediately when stream starts
                 greeting_audio, _ = await session.handle_audio_chunk(b"")

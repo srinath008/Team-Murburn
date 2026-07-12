@@ -1,7 +1,7 @@
 # MASTER SYSTEM INSTRUCTIONS: AI BLOOD NETWORK BACKEND
 
 ## 1. Project Context
-We are building an AI-powered emergency blood dispatch network. The system allows a hospital to trigger an emergency, which queries a Neo4j Graph Database for eligible donors within 10km who have not donated in the last 56 days. The system uses LangGraph to trigger simultaneous outbound phone calls via Exotel. Sarvam AI handles real-time multi-lingual voice conversations. Donors who accept are sent either an Expo push notification (if they have the app) or an SMS with a web tracking link. 
+We are building an AI-powered emergency blood dispatch network. The system allows a hospital to trigger an emergency, which queries a Neo4j Graph Database for eligible donors within 10km who have not donated in the last 56 days. The system uses LangGraph to trigger simultaneous outbound phone calls via Twilio. Sarvam AI handles real-time multi-lingual voice conversations. Donors who accept are sent either an Expo push notification (if they have the app) or an SMS with a web tracking link. 
 
 ## 2. Your Domain: The Core Engine
 **Directory Restriction:** `backend/`
@@ -10,9 +10,9 @@ We are building an AI-powered emergency blood dispatch network. The system allow
 ## 3. Technical Specifications & Tasks
 * **Framework:** Python FastAPI.
 * **Orchestration:** LangGraph (StateGraph) for managing the call state (Ringing -> Answered -> Accepted/Declined).
-* **Concurrency:** Use `asyncio` to handle simultaneous Exotel API webhook requests.
+* **Concurrency:** Use `asyncio` to handle simultaneous Twilio API webhook requests.
 * **Real-Time Comms:** Implement a WebSocket server route (`/ws/dashboard`) to stream call status updates to the frontend in real-time.
-* **AI Integration:** Create an asynchronous streaming pipeline to connect Exotel's audio websocket to Sarvam AI's STT/TTS models. 
+* **AI Integration:** Create an asynchronous streaming pipeline to connect Twilio's audio websocket to Sarvam AI's STT/TTS models. 
 
 ## 4. Git & Collaboration Workflow
 * **Branching:** All backend work must happen on branches prefixed with `backend/` (e.g., `git checkout -b backend/langgraph-setup`).

@@ -83,7 +83,7 @@ async def query_donors_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ).model_dump()
 
     logger.info("Matched %d eligible donors for dispatch %s", len(donors), state.get("dispatch_id"))
-    return {"donors": donor_states}
+    return {**state, "donors": donor_states}
 
 
 async def initiate_calls_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -149,7 +149,7 @@ async def initiate_calls_node(state: Dict[str, Any]) -> Dict[str, Any]:
     await asyncio.gather(*call_tasks, return_exceptions=True)
 
     logger.info("Initiated %d calls for dispatch %s", len(donors), dispatch_id)
-    return {"updates": updates}
+    return {**state, "updates": updates}
 
 
 async def _initiate_single_call(
@@ -171,6 +171,8 @@ async def _initiate_single_call(
         if call_sid:
             await dispatch_store.register_call(call_sid, dispatch_id, donor_id)
     except Exception as exc:
+        import sentry_sdk
+        sentry_sdk.capture_exception(exc)
         logger.error(
             "Failed to initiate call for donor %s in dispatch %s: %s",
             donor_id, dispatch_id, exc,
@@ -220,6 +222,8 @@ async def route_donor_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     # Fall through to SMS.
                     await _send_sms_fallback(donor_data, dispatch_id, donor_id)
             except Exception as exc:
+                import sentry_sdk
+                sentry_sdk.capture_exception(exc)
                 logger.error("Push notification failed for donor %s: %s", donor_id, exc)
                 # Fall through to SMS on push failure.
                 await _send_sms_fallback(donor_data, dispatch_id, donor_id)
@@ -235,7 +239,7 @@ async def route_donor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ).model_dump()
         updates.append(update)
 
-    return {"updates": state.get("updates", []) + updates, "is_complete": True}
+    return {**state, "updates": state.get("updates", []) + updates, "is_complete": True}
 
 
 async def _send_sms_fallback(

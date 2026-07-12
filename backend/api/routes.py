@@ -11,10 +11,11 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 
 from backend.api.websockets import manager
-from backend.db_services import find_eligible_donors, update_donation_date
+from backend.api.auth import get_current_hospital
+from backend.db_services import find_eligible_donors, update_donation_date, register_donor
 from backend.orchestration.graph import DispatchState, dispatch_graph
 from backend.schemas.models import (
     CallStatus,
@@ -22,6 +23,7 @@ from backend.schemas.models import (
     DispatchResponse,
     DonationLog,
     DonorStatusUpdate,
+    DonorRegistration,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["dispatch"])
 async def trigger_dispatch(
     payload: DispatchRequest,
     background_tasks: BackgroundTasks,
+    hospital_id: str = Depends(get_current_hospital)
 ):
     """
     Emergency dispatch trigger.
@@ -45,11 +48,20 @@ async def trigger_dispatch(
     """
     dispatch_id = str(uuid4())
 
+    # Geocode if coordinates are missing/zero and address is provided
+    lat = payload.coordinates.lat
+    lng = payload.coordinates.lng
+    if lat == 0.0 and lng == 0.0 and payload.address:
+        from backend.services.geocoding import geocode_address
+        coords = await geocode_address(payload.address)
+        if coords:
+            lat, lng = coords
+
     # Step 1 — find eligible donors
     donors = await find_eligible_donors(
         blood_group=payload.blood_group,
-        lat=payload.coordinates.lat,
-        lng=payload.coordinates.lng,
+        lat=lat,
+        lng=lng,
     )
 
     if not donors:
@@ -65,8 +77,8 @@ async def trigger_dispatch(
         hospital_id=payload.hospital_id,
         blood_group=payload.blood_group,
         urgency=payload.urgency.value,
-        lat=payload.coordinates.lat,
-        lng=payload.coordinates.lng,
+        lat=lat,
+        lng=lng,
     ).model_dump()
 
     # Step 3 — run orchestration in the background so we return fast
@@ -115,7 +127,10 @@ async def _run_dispatch_graph(dispatch_id: str, initial_state: dict) -> None:
 # ── POST /api/donate — Log a Successful Donation ─────────────────
 
 @router.post("/donate")
-async def log_donation(payload: DonationLog):
+async def log_donation(
+    payload: DonationLog,
+    hospital_id: str = Depends(get_current_hospital)
+):
     """
     Called by hospital staff after a successful transfusion.
     Updates the donor's `last_donated_date` in Neo4j, activating
@@ -137,6 +152,28 @@ async def log_donation(payload: DonationLog):
         "cooldown_until": (datetime.utcnow().replace(microsecond=0)).isoformat() + " + 56 days",
         "message": "Donation recorded. Donor is now on 56-day cooldown.",
     }
+
+
+# ── POST /api/donor/register ───────────────────────────────────────
+
+@router.post("/donor/register")
+async def register_new_donor(payload: DonorRegistration):
+    """
+    Called by the mobile app to register a new donor or update an existing one.
+    """
+    try:
+        await register_donor(
+            name=payload.name,
+            phone=payload.phone,
+            blood_group=payload.blood_group,
+            language=payload.language.lower(),
+            lat=payload.lat,
+            lng=payload.lng,
+        )
+        return {"status": "ok", "message": "Donor successfully registered"}
+    except Exception as exc:
+        logger.exception("Failed to register donor: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to register donor")
 
 
 # ── GET /api/health ───────────────────────────────────────────────

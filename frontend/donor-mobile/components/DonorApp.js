@@ -174,6 +174,8 @@ export default function DonorApp() {
     }
   };
 
+const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.app';
+
   const handleRegister = async () => {
     setRegError('');
     if (!name.trim()) return setRegError('Name is required');
@@ -192,8 +194,26 @@ export default function DonorApp() {
       last_donated_date: lastDonatedDate ? lastDonatedDate.toISOString() : null,
     };
     try {
+      const res = await fetch(`${SERVER_BASE_URL}/api/donor/register`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({
+          name: profile.name,
+          phone: profile.phone,
+          blood_group: profile.blood_group,
+          language: profile.language,
+          lat: profile.lat,
+          lng: profile.lng
+        })
+      });
+      if (!res.ok) {
+        throw new Error('Backend registration failed with status ' + res.status);
+      }
       await AsyncStorage.setItem(getProfileKey(), JSON.stringify(profile));
-      setTimeout(() => { setIsSaving(false); setIsRegistered(true); setIsEditing(false); }, 800);
+      setIsSaving(false); setIsRegistered(true); setIsEditing(false);
     } catch (err) {
       setIsSaving(false);
       setRegError(`Failed to save profile: ${err.message}`);

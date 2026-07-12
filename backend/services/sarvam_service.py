@@ -27,8 +27,7 @@ async def _get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(
             base_url=settings.sarvam_base_url,
             headers={
-                "API-Subscription-Key": settings.sarvam_api_key,
-                "Content-Type": "application/json",
+                "api-subscription-key": settings.sarvam_api_key,
             },
             timeout=30.0,
         )
@@ -40,27 +39,15 @@ async def _get_client() -> httpx.AsyncClient:
 async def transcribe_audio(
     audio_bytes: bytes,
     language: str = "en-IN",
-    model: str = "saarika:v2",
+    model: str = "saarika:v2.5",
 ) -> Dict[str, Any]:
     """
     Send raw audio bytes to Sarvam STT and return the transcript.
-
-    Parameters
-    ----------
-    audio_bytes : bytes
-        Raw audio data (WAV / PCM expected by Sarvam).
-    language : str
-        BCP-47 language tag, e.g. 'hi-IN', 'ta-IN', 'en-IN'.
-    model : str
-        Sarvam STT model identifier.
-
-    Returns
-    -------
-    dict   Containing at minimum ``{"transcript": "..."}``
     """
     client = await _get_client()
 
     # Sarvam expects multipart/form-data for audio uploads.
+    # We must NOT have application/json in the headers here.
     files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
     data = {
         "language_code": language,
@@ -84,26 +71,11 @@ async def transcribe_audio(
 async def synthesize_speech(
     text: str,
     language: str = "en-IN",
-    speaker: str = "meera",
-    model: str = "bulbul:v1",
+    speaker: str = "kavya",
+    model: str = "bulbul:v3",
 ) -> bytes:
     """
     Convert text to speech audio using Sarvam TTS.
-
-    Parameters
-    ----------
-    text : str
-        The text to synthesize.
-    language : str
-        Target language (BCP-47).
-    speaker : str
-        Voice persona — e.g. 'meera', 'arvind'.
-    model : str
-        Sarvam TTS model identifier.
-
-    Returns
-    -------
-    bytes   Raw audio bytes (WAV).
     """
     client = await _get_client()
     payload = {
@@ -114,7 +86,7 @@ async def synthesize_speech(
     }
 
     try:
-        resp = await client.post("/text-to-speech", json=payload)
+        resp = await client.post("/text-to-speech", json=payload, headers={"Content-Type": "application/json"})
         resp.raise_for_status()
         result = resp.json()
         # Sarvam returns base64-encoded audio in the response.

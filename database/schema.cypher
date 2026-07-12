@@ -13,6 +13,14 @@ FOR (d:Donor) REQUIRE d.id IS UNIQUE;
 CREATE CONSTRAINT hospital_id_unique IF NOT EXISTS
 FOR (h:Hospital) REQUIRE h.id IS UNIQUE;
 
+// Every dispatch must have a unique id
+CREATE CONSTRAINT dispatch_id_unique IF NOT EXISTS
+FOR (d:Dispatch) REQUIRE d.id IS UNIQUE;
+
+// Every call session must have a unique sid
+CREATE CONSTRAINT call_sid_unique IF NOT EXISTS
+FOR (c:CallSession) REQUIRE c.sid IS UNIQUE;
+
 // --- Indexes ---------------------------------------------------------------
 // Point index powers the spatial radius queries (point.distance)
 CREATE POINT INDEX donor_location_index IF NOT EXISTS
@@ -24,6 +32,10 @@ FOR (d:Donor) ON (d.blood_group);
 
 CREATE INDEX donor_last_donated_index IF NOT EXISTS
 FOR (d:Donor) ON (d.last_donated_date);
+
+// Fast lookups for calls by dispatch_id
+CREATE INDEX call_dispatch_index IF NOT EXISTS
+FOR (c:CallSession) ON (c.dispatch_id);
 
 // =============================================================================
 // Node shape reference (matches system_architecture_manifest.md data contract)

@@ -325,3 +325,163 @@ async def register_donor(
 
     logger.info("Donor registered/updated: phone=%s", phone)
     return _record_to_donor_node(record.data())
+
+
+# -----------------------------------------------------------------------------
+# 6. DISPATCH STORE INTEGRATION
+# -----------------------------------------------------------------------------
+_CREATE_DISPATCH_QUERY = """
+MERGE (dp:Dispatch {id: $dispatch_id})
+SET dp.hospital_id = $hospital_id,
+    dp.blood_group = $blood_group,
+    dp.lat = $lat,
+    dp.lng = $lng,
+    dp.created_at = $created_at,
+    dp.is_complete = false
+WITH dp
+UNWIND $donor_ids AS donor_id
+MATCH (d:Donor {id: donor_id})
+MERGE (c:CallSession {dispatch_id: $dispatch_id, donor_id: donor_id})
+ON CREATE SET c.status = 'ringing'
+MERGE (dp)-[:HAS_CALL]->(c)
+MERGE (c)-[:CALLED]->(d)
+RETURN dp.id AS id
+"""
+
+async def db_create_dispatch(
+    dispatch_id: str,
+    hospital_id: str,
+    blood_group: str,
+    lat: float,
+    lng: float,
+    donor_ids: list[str]
+) -> None:
+    driver = _get_driver()
+    created_at = datetime.utcnow().isoformat()
+    async with driver.session() as session:
+        await session.run(
+            _CREATE_DISPATCH_QUERY,
+            dispatch_id=dispatch_id,
+            hospital_id=hospital_id,
+            blood_group=blood_group,
+            lat=lat,
+            lng=lng,
+            created_at=created_at,
+            donor_ids=donor_ids
+        )
+
+_REGISTER_CALL_SID_QUERY = """
+MATCH (c:CallSession {dispatch_id: $dispatch_id, donor_id: $donor_id})
+SET c.sid = $call_sid
+"""
+
+async def db_register_call_sid(call_sid: str, dispatch_id: str, donor_id: str) -> None:
+    driver = _get_driver()
+    async with driver.session() as session:
+        await session.run(_REGISTER_CALL_SID_QUERY, call_sid=call_sid, dispatch_id=dispatch_id, donor_id=donor_id)
+
+_GET_DISPATCH_QUERY = """
+MATCH (dp:Dispatch {id: $dispatch_id})
+OPTIONAL MATCH (dp)-[:HAS_CALL]->(c:CallSession)-[:CALLED]->(d:Donor)
+RETURN dp.id AS dispatch_id, dp.hospital_id AS hospital_id, dp.blood_group AS blood_group,
+       dp.lat AS lat, dp.lng AS lng, dp.created_at AS created_at, dp.is_complete AS is_complete,
+       collect({
+           call_sid: c.sid,
+           status: c.status,
+           eta_minutes: c.eta_minutes,
+           donor_id: d.id,
+           name: d.name,
+           phone: d.phone,
+           has_app: d.has_app,
+           language: d.language
+       }) AS donors
+"""
+
+async def db_get_dispatch(dispatch_id: str) -> Optional[dict]:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_DISPATCH_QUERY, dispatch_id=dispatch_id)
+        record = await result.single()
+        if not record:
+            return None
+        data = record.data()
+        donors_dict = {}
+        for donor_entry in data.get("donors", []):
+            if donor_entry.get("donor_id"):
+                donors_dict[donor_entry["donor_id"]] = donor_entry
+        data["donors"] = donors_dict
+        return data
+
+_GET_BY_CALL_SID_QUERY = """
+MATCH (c:CallSession {sid: $call_sid})
+RETURN c.dispatch_id AS dispatch_id, c.donor_id AS donor_id
+"""
+
+async def db_get_by_call_sid(call_sid: str) -> Optional[tuple[str, str]]:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_BY_CALL_SID_QUERY, call_sid=call_sid)
+        record = await result.single()
+        if record:
+            return record["dispatch_id"], record["donor_id"]
+        return None
+
+_UPDATE_DONOR_STATUS_QUERY = """
+MATCH (c:CallSession {dispatch_id: $dispatch_id, donor_id: $donor_id})
+SET c.status = $status,
+    c.eta_minutes = COALESCE($eta_minutes, c.eta_minutes)
+RETURN c.donor_id
+"""
+
+async def db_update_donor_status(dispatch_id: str, donor_id: str, status: str, eta_minutes: Optional[int] = None) -> bool:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_UPDATE_DONOR_STATUS_QUERY, dispatch_id=dispatch_id, donor_id=donor_id, status=status, eta_minutes=eta_minutes)
+        record = await result.single()
+        return record is not None
+
+_MARK_COMPLETE_QUERY = """
+MATCH (dp:Dispatch {id: $dispatch_id})
+SET dp.is_complete = true
+"""
+
+async def db_mark_complete(dispatch_id: str) -> None:
+    driver = _get_driver()
+    async with driver.session() as session:
+        await session.run(_MARK_COMPLETE_QUERY, dispatch_id=dispatch_id)
+
+_REMOVE_DISPATCH_QUERY = """
+MATCH (dp:Dispatch {id: $dispatch_id})
+OPTIONAL MATCH (dp)-[:HAS_CALL]->(c:CallSession)
+DETACH DELETE dp, c
+"""
+
+async def db_remove_dispatch(dispatch_id: str) -> None:
+    driver = _get_driver()
+    async with driver.session() as session:
+        await session.run(_REMOVE_DISPATCH_QUERY, dispatch_id=dispatch_id)
+
+_ACTIVE_COUNT_QUERY = """
+MATCH (dp:Dispatch {is_complete: false})
+RETURN count(dp) AS active_count
+"""
+
+async def db_active_count() -> int:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_ACTIVE_COUNT_QUERY)
+        record = await result.single()
+        return record["active_count"] if record else 0
+
+_SUMMARY_QUERY = """
+MATCH (dp:Dispatch)
+OPTIONAL MATCH (dp)-[:HAS_CALL]->(c:CallSession)
+RETURN dp.id AS dispatch_id, count(c) AS donors, dp.is_complete AS is_complete, dp.created_at AS created_at
+ORDER BY dp.created_at DESC
+"""
+
+async def db_summary() -> list[dict]:
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_SUMMARY_QUERY)
+        return [record.data() async for record in result]

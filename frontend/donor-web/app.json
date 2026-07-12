@@ -19,6 +19,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "donor-web",
+    "plugins": [
+      "expo-router"
+    ]
   }
 }

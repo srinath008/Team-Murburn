@@ -1,27 +1,32 @@
-# =============================================================================
-# docker-compose.yml — DRAFT, pending review with Backend/Frontend team
-# =============================================================================
-# This only runs the FastAPI backend locally right now. Neo4j is NOT included
-# here because we're using managed AuraDB (cloud-hosted), not a local Neo4j
-# container — no need to run a database container ourselves.
-#
-# OPEN QUESTIONS to confirm with the team before treating this as final:
-#   1. Does the frontend (Expo) need its own service block here too, or does
-#      it run separately via `expo start`?
-#   2. Do we need a docker-compose.override.yml for local dev vs. what ships?
-#   3. Any other services (e.g. a Redis cache for call state?) planned?
-# =============================================================================
+version: "3.8"
 
 services:
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
+    container_name: blood_dispatch_backend
     ports:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
     volumes:
+      # Mount code so changes reflect locally (remove for production)
       - ./backend:/app/backend
-      - ./database:/app/database
-    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5
+    container_name: blood_dispatch_neo4j
+    ports:
+      - "7474:7474" # Browser UI
+      - "7687:7687" # Bolt protocol
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

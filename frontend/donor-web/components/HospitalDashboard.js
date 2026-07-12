@@ -90,6 +90,8 @@ export default function HospitalDashboard() {
   const [dispatches, setDispatches] = useState([]);
   const [analyticsLog, setAnalyticsLog] = useState([]);
   const ws = useRef(null);
+  const reconnectTimeout = useRef(null);
+  const reconnectAttempts = useRef(0);
 
   // INITIAL LOAD
   useEffect(() => {
@@ -123,26 +125,45 @@ export default function HospitalDashboard() {
     if (!loginId.startsWith('HOSP-')) return setAuthError('Invalid Hospital ID format (e.g. HOSP-123)');
     
     setAuthLoading(true);
-    setTimeout(async () => {
+    try {
+      // Fetch JWT Token
+      const formData = new URLSearchParams();
+      formData.append('username', loginId);
+      formData.append('password', password);
+      
+      let token = "mock-token";
       try {
-        // Look up registered hospital or create a mock one if it doesn't exist
-        const savedData = await AsyncStorage.getItem(`@hosp_profile_${loginId.toUpperCase()}`);
-        let user;
-        if (savedData) {
-           user = JSON.parse(savedData);
-        } else {
-           // Fallback mock user for testing existing IDs
-           user = { id: loginId.toUpperCase(), name: 'Central Hospital', location: 'Main Ward', phone: 'N/A' };
+        const tokenRes = await fetch(`http://${serverUrl}/api/auth/token`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+           body: formData.toString()
+        });
+        if (tokenRes.ok) {
+           const tokenData = await tokenRes.json();
+           token = tokenData.access_token;
         }
-        
-        await AsyncStorage.setItem('@hosp_user', JSON.stringify(user));
-        setHospitalProfile(user);
-        setAddress(user.location || '');
-        setIsLoggedIn(true);
-        loadAnalytics(user.id);
-      } catch(e) {}
-      setAuthLoading(false);
-    }, 800);
+      } catch (err) {
+        console.warn("Auth server unreachable, falling back to local simulation.", err);
+      }
+      
+      const savedData = await AsyncStorage.getItem(`@hosp_profile_${loginId.toUpperCase()}`);
+      let user;
+      if (savedData) {
+         user = JSON.parse(savedData);
+      } else {
+         user = { id: loginId.toUpperCase(), name: 'Central Hospital', location: 'Main Ward', phone: 'N/A' };
+      }
+      user.token = token;
+      
+      await AsyncStorage.setItem('@hosp_user', JSON.stringify(user));
+      setHospitalProfile(user);
+      setAddress(user.location || '');
+      setIsLoggedIn(true);
+      loadAnalytics(user.id);
+    } catch(e) {
+      setAuthError('Login failed: ' + e.message);
+    }
+    setAuthLoading(false);
   };
 
   const handleSignup = async () => {
@@ -180,22 +201,49 @@ export default function HospitalDashboard() {
   // ─── WEBSOCKET & LOGIC ───
   const connectWebSocket = () => {
     if (ws.current) ws.current.close();
+    if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+    
     setIsConnecting(true);
     const url = `ws://${serverUrl}/ws/dashboard`;
-    addLog(`Connecting to ${url}...`);
+    addLog(`Connecting to ${url}... (Attempt ${reconnectAttempts.current + 1})`);
     try {
       ws.current = new WebSocket(url);
-      ws.current.onopen = () => { setIsConnected(true); setIsConnecting(false); addLog('Connected to WebSocket server.'); };
+      ws.current.onopen = () => { 
+        setIsConnected(true); 
+        setIsConnecting(false); 
+        reconnectAttempts.current = 0;
+        addLog('Connected to WebSocket server.'); 
+      };
       ws.current.onmessage = (event) => {
         addLog(`Received message: ${event.data}`);
         try { const payload = JSON.parse(event.data); if (payload.donor_id && payload.status) updateDonorStatus(payload); } catch (err) { addLog(`Error parsing JSON: ${err.message}`); }
       };
-      ws.current.onerror = (error) => { addLog(`WebSocket Error: ${error.message || 'Connection failed'}`); };
-      ws.current.onclose = () => { setIsConnected(false); setIsConnecting(false); addLog('Disconnected from WebSocket server.'); };
+      ws.current.onerror = (error) => { addLog(`WebSocket Error: Connection failed`); };
+      ws.current.onclose = () => { 
+        setIsConnected(false); 
+        setIsConnecting(false); 
+        addLog('Disconnected from WebSocket server.'); 
+        
+        // Auto-reconnect logic
+        if (reconnectAttempts.current < 5) {
+          const delay = Math.min(1000 * (2 ** reconnectAttempts.current), 10000);
+          addLog(`Auto-reconnecting in ${delay/1000}s...`);
+          reconnectTimeout.current = setTimeout(() => {
+            reconnectAttempts.current += 1;
+            connectWebSocket();
+          }, delay);
+        } else {
+          addLog('Max reconnect attempts reached. Please reconnect manually.');
+        }
+      };
     } catch (e) { setIsConnecting(false); addLog(`WebSocket connection exception: ${e.message}`); }
   };
 
-  const disconnectWebSocket = () => { if (ws.current) ws.current.close(); };
+  const disconnectWebSocket = () => { 
+    if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+    reconnectAttempts.current = 5; // prevent auto-reconnect
+    if (ws.current) ws.current.close(); 
+  };
 
   const addLog = (msg) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -239,7 +287,14 @@ export default function HospitalDashboard() {
     const payload = { hospital_id: hospitalProfile?.id, blood_group: bloodGroup, urgency, coordinates: coords, address, patient_name: patientName };
     addLog(`Sending Emergency Trigger POST to /api/dispatch: ${JSON.stringify(payload)}`);
     try {
-      const response = await fetch(`http://${serverUrl}/api/dispatch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const response = await fetch(`http://${serverUrl}/api/dispatch`, { 
+        method: 'POST', 
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hospitalProfile?.token || ''}`
+        }, 
+        body: JSON.stringify(payload) 
+      });
       if (response.ok) { setSubmitStatus({ success: true, message: 'Emergency dispatch triggered successfully! Calls queued.' }); addLog('POST /api/dispatch - Status 200 OK'); }
       else { const text = await response.text(); setSubmitStatus({ success: false, message: `Server error (${response.status}): ${text || 'Unknown failure'}` }); addLog(`POST /api/dispatch - Status ${response.status} failed`); }
     } catch (err) {

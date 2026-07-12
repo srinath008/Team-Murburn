@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional, Tuple
 
+from backend.services.audio_utils import create_wav_from_mulaw, create_mulaw_from_wav
 from backend.services.sarvam_service import (
     get_bcp47_code,
     synthesize_speech,
@@ -41,11 +42,11 @@ _ACCEPT_KEYWORDS = {
     "hindi": [
         "haan", "haa", "theek", "theek hai", "aa raha", "aa rahi",
         "aa rahe", "bilkul", "zaroor", "main aaunga", "main aaungi",
-        "tayyar", "ha ji",
+        "tayyar", "ha ji", "हाँ", "ठीक", "आ", "जरूर", "तैयार", "यस"
     ],
     "tamil": [
         "aama", "seri", "varuven", "vara mudiyum", "varen",
-        "sarri", "ok", "ready",
+        "sarri", "ok", "ready", "ஆம்", "சரி", "வருவேன்", "முடியும்", "வரேன்", "எஸ்", "ஓகே"
     ],
 }
 
@@ -56,11 +57,11 @@ _DECLINE_KEYWORDS = {
     ],
     "hindi": [
         "nahi", "naa", "nahin", "maaf", "nahi aa sakta",
-        "nahi aa sakti", "busy", "mushkil",
+        "nahi aa sakti", "busy", "mushkil", "नहीं", "माफ़", "व्यस्त", "मुश्किल", "नो"
     ],
     "tamil": [
         "illa", "mudiyathu", "mudiyadu", "varamudiyathu",
-        "sorry", "busy",
+        "sorry", "busy", "இல்லை", "முடியாது", "வர முடியாது", "நோ"
     ],
 }
 
@@ -164,10 +165,11 @@ class VoiceSession:
     # ── Transcription ─────────────────────────────────────────────
 
     async def _transcribe(self, audio_bytes: bytes) -> Optional[str]:
-        """Transcribe audio bytes using Sarvam STT."""
+        """Convert raw mu-law to WAV and call Sarvam STT."""
         try:
             bcp47 = get_bcp47_code(self.language)
-            result = await transcribe_audio(audio_bytes, language=bcp47)
+            wav_bytes = create_wav_from_mulaw(audio_bytes)
+            result = await transcribe_audio(wav_bytes, language=bcp47)
             return result.get("transcript", "").strip()
         except Exception as exc:
             logger.error(
@@ -262,7 +264,9 @@ class VoiceSession:
 
             # Synthesize audio.
             audio = await synthesize_speech(text, language=bcp47)
-            return audio if audio else None
+            if audio:
+                return create_mulaw_from_wav(audio)
+            return None
 
         except Exception as exc:
             logger.error(
