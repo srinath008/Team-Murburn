@@ -39,8 +39,12 @@ async def test_unauthorized_dispatch():
 
 @pytest.mark.asyncio
 @patch("backend.api.routes.find_eligible_donors")
-async def test_authorized_dispatch(mock_find_donors):
+@patch("backend.api.auth.db_get_hospital_by_id")
+@patch("backend.api.auth.verify_password")
+async def test_authorized_dispatch(mock_verify, mock_get_hospital, mock_find_donors):
     mock_find_donors.return_value = [] # Return empty list so it doesn't trigger graph
+    mock_get_hospital.return_value = {"id": "HOSP-123", "password_hash": "hash"}
+    mock_verify.return_value = True
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         login_res = await ac.post("/api/auth/token", data={"username": "HOSP-123", "password": "password"})
