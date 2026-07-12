@@ -157,11 +157,50 @@ export default function DonorApp() {
       }
 
       const savedLog = await AsyncStorage.getItem(getLogKey());
-      if (savedLog) {
-        setDonationLog(JSON.parse(savedLog));
-      } else {
-        setDonationLog([]);
+      let currentLog = savedLog ? JSON.parse(savedLog) : [];
+
+      // ─── SYNC WITH BACKEND ───
+      try {
+        const phoneParam = currentUser.id.startsWith('+91') ? currentUser.id : `+91${currentUser.id}`;
+        const response = await axios.get(`${SERVER_BASE_URL}/api/donor/profile/${encodeURIComponent(phoneParam)}`);
+        const backendProfile = response.data.donor;
+        
+        if (backendProfile && backendProfile.last_donated_date) {
+          const backendDate = new Date(backendProfile.last_donated_date);
+          
+          let localDate = null;
+          if (savedProfile) {
+            const parsedProfile = JSON.parse(savedProfile);
+            if (parsedProfile.last_donated_date) {
+              localDate = new Date(parsedProfile.last_donated_date);
+            }
+          }
+
+          // If backend has a newer donation date, update local state
+          if (!localDate || backendDate.getTime() > localDate.getTime()) {
+            setLastDonatedDate(backendDate);
+            
+            if (savedProfile) {
+              const updatedProfile = { ...JSON.parse(savedProfile), last_donated_date: backendProfile.last_donated_date };
+              await AsyncStorage.setItem(getProfileKey(), JSON.stringify(updatedProfile));
+            }
+            
+            // Add to donation log
+            const newLogEntry = {
+              id: Date.now().toString(),
+              date: backendProfile.last_donated_date,
+              hospital: 'AI Dispatch System',
+              status: 'Completed'
+            };
+            currentLog = [newLogEntry, ...currentLog];
+            await AsyncStorage.setItem(getLogKey(), JSON.stringify(currentLog));
+          }
+        }
+      } catch (backendErr) {
+        console.log("Could not sync with backend:", backendErr.message);
       }
+
+      setDonationLog(currentLog);
     } catch (err) {
       Alert.alert('Error', 'Failed to load profile');
     }
@@ -681,7 +720,7 @@ export default function DonorApp() {
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={s.labelTiny}>REGISTERED PROFILE</Text>
                   <Text style={s.profileName}>{name}</Text>
-                  <Text style={s.profilePhone}>+91 {phone}</Text>
+                  <Text style={s.profilePhone}>{phone.startsWith('+91') ? phone : `+91 ${phone}`}</Text>
                 </View>
               </View>
               <View style={s.bloodBadge}>

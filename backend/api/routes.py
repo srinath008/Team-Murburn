@@ -15,7 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 
 from backend.api.websockets import manager
 from backend.api.auth import get_current_hospital
-from backend.db_services import find_eligible_donors, update_donation_date, register_donor
+from backend.db_services import find_eligible_donors, update_donation_date, register_donor, get_donor_by_phone
 from backend.orchestration.graph import DispatchState, dispatch_graph
 from backend.schemas.models import (
     CallStatus,
@@ -174,6 +174,36 @@ async def register_new_donor(payload: DonorRegistration):
     except Exception as exc:
         logger.exception("Failed to register donor: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to register donor")
+
+
+# ── GET /api/donor/profile/{phone} ─────────────────────────────────
+
+@router.get("/donor/profile/{phone}")
+async def get_donor_profile(phone: str):
+    """
+    Called by the mobile app on startup to sync the donor's profile
+    and cooldown status from the database.
+    """
+    try:
+        donor = await get_donor_by_phone(phone)
+        if not donor:
+            raise HTTPException(status_code=404, detail="Donor not found")
+            
+        return {
+            "status": "ok",
+            "donor": {
+                "id": donor.id,
+                "name": donor.name,
+                "phone": donor.phone,
+                "blood_group": donor.blood_group,
+                "last_donated_date": donor.last_donated_date.isoformat() if donor.last_donated_date else None,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to get donor profile: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to get donor profile")
 
 
 # ── GET /api/health ───────────────────────────────────────────────

@@ -247,6 +247,43 @@ async def get_donor_by_id(donor_id: str) -> Optional[DonorNode]:
 
 
 # -----------------------------------------------------------------------------
+# 3.5 GET DONOR BY PHONE
+# -----------------------------------------------------------------------------
+_GET_DONOR_BY_PHONE_QUERY = """
+MATCH (d:Donor {phone: $phone})
+RETURN
+    d.id AS id,
+    d.name AS name,
+    d.phone AS phone,
+    d.blood_group AS blood_group,
+    d.language AS language,
+    d.location AS location,
+    d.has_app AS has_app,
+    d.last_donated_date AS last_donated_date
+"""
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
+async def get_donor_by_phone(phone: str) -> Optional[DonorNode]:
+    """
+    Fetch a single donor node by its phone number.
+    Returns None if not found.
+    """
+    driver = _get_driver()
+    async with driver.session() as session:
+        result = await session.run(_GET_DONOR_BY_PHONE_QUERY, phone=phone)
+        record = await result.single()
+
+    if record is None:
+        return None
+    return _record_to_donor_node(record.data())
+
+
+# -----------------------------------------------------------------------------
 # 4. GET DONOR PUSH TOKEN
 #    Called by orchestration/graph.py (route_donor_node) to send Expo
 #    push notifications to donors with the app.
