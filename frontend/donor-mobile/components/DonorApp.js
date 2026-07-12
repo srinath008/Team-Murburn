@@ -357,12 +357,9 @@ export default function DonorApp() {
         setLocationLoading(false);
         return;
       }
-      let location = await Location.getLastKnownPositionAsync();
-      if (!location) {
-        location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Low, // Low accuracy prevents GPS hardware crashes
-        });
-      }
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       const { latitude, longitude } = location.coords;
       setLat(latitude);
       setLng(longitude);
