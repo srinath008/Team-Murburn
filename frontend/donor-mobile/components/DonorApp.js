@@ -179,9 +179,11 @@ export default function DonorApp() {
     const finalBloodGroup = bloodGroup === 'Others' ? customBloodGroup.trim() : bloodGroup;
     if (!finalBloodGroup) return setRegError('Please specify your blood group');
 
+    const finalPhone = phone.startsWith('+91') ? phone : `+91${phone}`;
+
     setIsSaving(true);
     const profile = {
-      name, phone, blood_group: finalBloodGroup, language,
+      name, phone: finalPhone, blood_group: finalBloodGroup, language,
       lat, lng, address, location_source: locationSource,
       profilePic,
       last_donated_date: lastDonatedDate ? lastDonatedDate.toISOString() : null,
