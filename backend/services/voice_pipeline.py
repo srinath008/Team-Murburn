@@ -186,9 +186,10 @@ class VoiceSession:
         Returns 'accepted', 'declined', or None.
         """
         text_lower = transcript.lower()
+        lang_key = self.language.lower()
 
-        accept_words = _ACCEPT_KEYWORDS.get(self.language, _ACCEPT_KEYWORDS["english"])
-        decline_words = _DECLINE_KEYWORDS.get(self.language, _DECLINE_KEYWORDS["english"])
+        accept_words = _ACCEPT_KEYWORDS.get(lang_key, _ACCEPT_KEYWORDS["english"])
+        decline_words = _DECLINE_KEYWORDS.get(lang_key, _DECLINE_KEYWORDS["english"])
 
         # Check decline first (if they say "no sorry I can't", decline wins).
         for keyword in decline_words:
