@@ -24,6 +24,8 @@ from typing import List, Optional
 from uuid import uuid4
 
 from neo4j import AsyncDriver, AsyncGraphDatabase
+from neo4j.exceptions import SessionExpired, ServiceUnavailable
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from backend.config import settings
 from backend.schemas.models import Coordinates, DonorNode
@@ -117,6 +119,12 @@ ORDER BY point.distance(d.location, point({latitude: $lat, longitude: $lng})) AS
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def find_eligible_donors(
     blood_group: str,
     lat: float,
@@ -166,6 +174,12 @@ RETURN d.id AS id
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def update_donation_date(
     donor_id: str,
     donated_at: Optional[datetime] = None,
@@ -211,6 +225,12 @@ RETURN
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def get_donor_by_id(donor_id: str) -> Optional[DonorNode]:
     """
     Fetch a single donor node by its UUID.
@@ -244,6 +264,12 @@ RETURN d.push_token AS push_token
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def get_donor_push_token(donor_id: str) -> Optional[str]:
     """
     Fetch the Expo push token for a donor who has the mobile app.
@@ -286,6 +312,12 @@ RETURN
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def register_donor(
     name: str,
     phone: str,
@@ -348,6 +380,12 @@ MERGE (c)-[:CALLED]->(d)
 RETURN dp.id AS id
 """
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((SessionExpired, ServiceUnavailable)),
+    reraise=True
+)
 async def db_create_dispatch(
     dispatch_id: str,
     hospital_id: str,

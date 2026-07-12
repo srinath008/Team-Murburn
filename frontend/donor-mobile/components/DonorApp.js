@@ -65,7 +65,7 @@ export default function DonorApp() {
         setIsLoggedIn(true);
       }
     } catch (e) {
-      console.log('Error checking login', e);
+      Alert.alert('Login Error', 'Error checking login status');
     }
   };
 
@@ -76,11 +76,8 @@ export default function DonorApp() {
     }
     setAuthLoading(true);
     try {
-      // Simulate network request
-      await new Promise(resolve => setTimeout(resolve, 800));
-
       const authKey = `@auth_${loginId.toLowerCase()}`;
-      
+
       if (authMode === 'signup') {
         const existing = await AsyncStorage.getItem(authKey);
         if (existing) {
@@ -88,7 +85,7 @@ export default function DonorApp() {
           setAuthLoading(false);
           return;
         }
-        await AsyncStorage.setItem(authKey, JSON.stringify({ password }));
+        await AsyncStorage.setItem(authKey, 'true'); // Store dummy token
         const user = { id: loginId.toLowerCase() };
         await AsyncStorage.setItem('@current_user', JSON.stringify(user));
         setCurrentUser(user);
@@ -100,12 +97,7 @@ export default function DonorApp() {
           setAuthLoading(false);
           return;
         }
-        const data = JSON.parse(existing);
-        if (data.password !== password) {
-          setAuthError('Incorrect password.');
-          setAuthLoading(false);
-          return;
-        }
+        // Mock authentication check
         const user = { id: loginId.toLowerCase() };
         await AsyncStorage.setItem('@current_user', JSON.stringify(user));
         setCurrentUser(user);
@@ -145,7 +137,7 @@ export default function DonorApp() {
           setBloodGroup('Others');
           setCustomBloodGroup(loadedBg);
         }
-        
+
         setLanguage(profile.language || 'English');
         setLat(parseFloat(profile.lat) || DEFAULT_LAT);
         setLng(parseFloat(profile.lng) || DEFAULT_LNG);
@@ -162,7 +154,7 @@ export default function DonorApp() {
         setLat(DEFAULT_LAT); setLng(DEFAULT_LNG); setAddress(''); setLocationSource(null);
         setProfilePic(null); setLastDonatedDate(null); setIsRegistered(false);
       }
-      
+
       const savedLog = await AsyncStorage.getItem(getLogKey());
       if (savedLog) {
         setDonationLog(JSON.parse(savedLog));
@@ -170,11 +162,11 @@ export default function DonorApp() {
         setDonationLog([]);
       }
     } catch (err) {
-      console.log('Error loading donor profile:', err);
+      Alert.alert('Error', 'Failed to load profile');
     }
   };
 
-const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.app';
+  const SERVER_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
   const handleRegister = async () => {
     setRegError('');
@@ -182,10 +174,10 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
     if (!phone.trim()) return setRegError('Phone number is required');
     if (phone.length !== 10) return setRegError('Phone number must be exactly 10 digits');
     if (!locationSource) return setRegError('Please set your location using GPS or enter it manually');
-    
+
     const finalBloodGroup = bloodGroup === 'Others' ? customBloodGroup.trim() : bloodGroup;
     if (!finalBloodGroup) return setRegError('Please specify your blood group');
-    
+
     setIsSaving(true);
     const profile = {
       name, phone, blood_group: finalBloodGroup, language,
@@ -196,7 +188,7 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
     try {
       const res = await fetch(`${SERVER_BASE_URL}/api/donor/register`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true'
         },
@@ -228,7 +220,7 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
       setLat(DEFAULT_LAT); setLng(DEFAULT_LNG); setAddress(''); setLocationSource(null);
       setProfilePic(null); setLastDonatedDate(null); setDonationLog([]);
       setIsRegistered(false); setIsEditing(false);
-    } catch (err) { console.log('Error clearing profile:', err); }
+    } catch (err) { Alert.alert('Error', 'Failed to clear profile'); }
   };
 
   const handleNameChange = (text) => {
@@ -288,7 +280,6 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
         setProfilePic(result.assets[0].uri);
       }
     } catch (error) {
-      console.log('Error picking image', error);
       Alert.alert('Error', 'Failed to pick image');
     }
   };
@@ -388,31 +379,31 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
   };
 
   const simulateCooldown = async (daysAgo) => {
-    if (daysAgo === null) { 
-      setLastDonatedDate(null); 
+    if (daysAgo === null) {
+      setLastDonatedDate(null);
       setDonationLog([]);
-      saveMockDonationDate(null, []); 
-      return; 
+      saveMockDonationDate(null, []);
+      return;
     }
-    
+
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() - daysAgo);
     setLastDonatedDate(targetDate);
-    
+
     // Log the simulated donation
     let hospitalName = "City Emergency Hospital";
     if (daysAgo > 20) hospitalName = "Apollo Speciality Care";
     if (daysAgo > 50) hospitalName = "Global Blood Bank";
-    
+
     const newEntry = {
       id: Date.now().toString() + Math.random().toString(),
       date: targetDate.toISOString(),
       hospital: hospitalName,
     };
-    
+
     const updatedLog = [newEntry, ...donationLog];
     setDonationLog(updatedLog);
-    
+
     saveMockDonationDate(targetDate, updatedLog);
   };
 
@@ -425,7 +416,7 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
         await AsyncStorage.setItem(getProfileKey(), JSON.stringify(profile));
       }
       await AsyncStorage.setItem(getLogKey(), JSON.stringify(updatedLog));
-    } catch (err) { console.log('Error saving mock donation date:', err); }
+    } catch (err) { Alert.alert('Error', 'Failed to update donation date'); }
   };
 
   const getNextEligibleDateText = () => {
@@ -454,23 +445,23 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
           </Text>
 
           <Text style={s.label}>EMAIL OR MOBILE NUMBER</Text>
-          <TextInput 
-            value={loginId} 
-            onChangeText={handleLoginIdChange} 
-            placeholder="e.g. 9876543210 or user@email.com" 
-            placeholderTextColor="#cbd5e1" 
-            style={s.input} 
+          <TextInput
+            value={loginId}
+            onChangeText={handleLoginIdChange}
+            placeholder="e.g. 9876543210 or user@email.com"
+            placeholderTextColor="#cbd5e1"
+            style={s.input}
             autoCapitalize="none"
           />
 
           <Text style={[s.label, { marginTop: 14 }]}>PASSWORD</Text>
-          <TextInput 
-            value={password} 
-            onChangeText={setPassword} 
-            placeholder="••••••••" 
-            placeholderTextColor="#cbd5e1" 
-            secureTextEntry 
-            style={s.input} 
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="••••••••"
+            placeholderTextColor="#cbd5e1"
+            secureTextEntry
+            style={s.input}
           />
 
           {authError ? (
@@ -493,8 +484,8 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
-          style={{ alignItems: 'center', marginTop: 20 }} 
+        <TouchableOpacity
+          style={{ alignItems: 'center', marginTop: 20 }}
           onPress={() => {
             setAuthMode(authMode === 'login' ? 'signup' : 'login');
             setAuthError('');
@@ -590,8 +581,8 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
     <ScrollView style={s.root} contentContainerStyle={s.rootContent}>
       <View style={s.headerWrap}>
         <View style={[s.row, { width: '100%', justifyContent: 'space-between', paddingHorizontal: 10, position: 'absolute', top: -30 }]}>
-           <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: 'bold' }}>{currentUser.id}</Text>
-           <TouchableOpacity onPress={handleLogout}><Text style={{ color: '#e11d48', fontSize: 12, fontWeight: 'bold' }}>Logout</Text></TouchableOpacity>
+          <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: 'bold' }}>{currentUser.id}</Text>
+          <TouchableOpacity onPress={handleLogout}><Text style={{ color: '#e11d48', fontSize: 12, fontWeight: 'bold' }}>Logout</Text></TouchableOpacity>
         </View>
         <View style={s.headerIcon}><Text style={{ fontSize: 28 }}>❤️</Text></View>
         <Text style={s.headerTitle}>Donor Lifeline App</Text>
@@ -625,30 +616,30 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
           <Text style={[s.label, { marginTop: 14 }]}>PHONE NUMBER</Text>
           <View style={s.phoneInputContainer}>
             <View style={s.phonePrefix}><Text style={s.phonePrefixText}>+91</Text></View>
-            <TextInput 
-              value={phone} 
-              onChangeText={handlePhoneChange} 
-              placeholder="9876543210" 
-              placeholderTextColor="#cbd5e1" 
-              keyboardType="phone-pad" 
+            <TextInput
+              value={phone}
+              onChangeText={handlePhoneChange}
+              placeholder="9876543210"
+              placeholderTextColor="#cbd5e1"
+              keyboardType="phone-pad"
               maxLength={10}
-              style={[s.input, s.phoneInput]} 
+              style={[s.input, s.phoneInput]}
             />
           </View>
 
           <Text style={[s.label, { marginTop: 14 }]}>BLOOD GROUP</Text>
           <View style={s.chipContainer}>
             {BLOOD_GROUPS.map(bg => (
-              <TouchableOpacity 
-                key={bg} 
-                onPress={() => setBloodGroup(bg)} 
+              <TouchableOpacity
+                key={bg}
+                onPress={() => setBloodGroup(bg)}
                 style={[s.chip, bloodGroup === bg && s.chipSelected]}
               >
                 <Text style={[s.chipText, bloodGroup === bg && s.chipTextSelected]}>{bg}</Text>
               </TouchableOpacity>
             ))}
           </View>
-          
+
           {bloodGroup === 'Others' && (
             <TextInput
               value={customBloodGroup}
@@ -662,9 +653,9 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
           <Text style={[s.label, { marginTop: 14 }]}>AI CALL LANGUAGE</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
             {LANGUAGES.map(lang => (
-              <TouchableOpacity 
-                key={lang} 
-                onPress={() => setLanguage(lang)} 
+              <TouchableOpacity
+                key={lang}
+                onPress={() => setLanguage(lang)}
                 style={[s.chip, { marginHorizontal: 4 }, language === lang && s.chipSelected]}
               >
                 <Text style={[s.chipText, language === lang && s.chipTextSelected]}>{lang}</Text>
@@ -770,51 +761,34 @@ const SERVER_BASE_URL = 'https://0b50-2a09-bac1-36c0-1468-00-29e-b5.ngrok-free.a
 
           {/* DONATION LOG */}
           <View style={[s.card, { marginTop: 16, paddingHorizontal: 0 }]}>
-             <View style={[s.row, { paddingHorizontal: 20, marginBottom: 12 }]}>
+            <View style={[s.row, { paddingHorizontal: 20, marginBottom: 12 }]}>
               <Text style={{ fontSize: 16, marginRight: 6 }}>📜</Text>
               <Text style={s.cardTitle}>Donation History Log</Text>
-             </View>
-             
-             {donationLog.length === 0 ? (
-               <View style={{ padding: 24, alignItems: 'center' }}>
-                  <Text style={{ color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }}>No donations recorded yet.</Text>
-               </View>
-             ) : (
-               <View>
-                 {donationLog.map((log, i) => {
-                   const logDate = new Date(log.date);
-                   const formattedDate = logDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-                   const isLast = i === donationLog.length - 1;
-                   return (
-                     <View key={log.id} style={[s.logItem, !isLast && s.logItemBorder]}>
-                       <View style={s.logItemIcon}><Text style={{ fontSize: 14 }}>🩸</Text></View>
-                       <View style={{ flex: 1, marginLeft: 12 }}>
-                         <Text style={s.logHospitalText}>{log.hospital}</Text>
-                         <Text style={s.logDateText}>{formattedDate}</Text>
-                       </View>
-                       <View style={s.logBadge}><Text style={s.logBadgeText}>DONATED</Text></View>
-                     </View>
-                   );
-                 })}
-               </View>
-             )}
-          </View>
+            </View>
 
-          {/* Simulator */}
-          <View style={[s.card, { marginTop: 16 }]}>
-            <View style={s.row}>
-              <Text style={{ fontSize: 14 }}>🔄</Text>
-              <Text style={[s.cardTitle, { marginLeft: 8 }]}>Milestone Simulator</Text>
-            </View>
-            <Text style={[s.cardDesc, { marginTop: 6 }]}>Test how the lockout gauge and dynamic statuses change by simulating different donation milestones:</Text>
-            
-            <View style={s.simGrid}>
-              <TouchableOpacity onPress={() => simulateCooldown(0)} style={s.simBtn}><Text style={s.simBtnText}>Donated Today</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => simulateCooldown(28)} style={s.simBtn}><Text style={s.simBtnText}>28 Days (50%)</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => simulateCooldown(55)} style={s.simBtn}><Text style={s.simBtnText}>55 Days (1d left)</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => simulateCooldown(60)} style={s.simBtn}><Text style={s.simBtnText}>60 Days (Ready)</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => simulateCooldown(null)} style={[s.simBtn, { flexBasis: '100%', backgroundColor: '#fff1f2', borderColor: '#fecdd3' }]}><Text style={[s.simBtnText, { color: '#be123c' }]}>Reset All History</Text></TouchableOpacity>
-            </View>
+            {donationLog.length === 0 ? (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <Text style={{ color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }}>No donations recorded yet.</Text>
+              </View>
+            ) : (
+              <View>
+                {donationLog.map((log, i) => {
+                  const logDate = new Date(log.date);
+                  const formattedDate = logDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+                  const isLast = i === donationLog.length - 1;
+                  return (
+                    <View key={log.id} style={[s.logItem, !isLast && s.logItemBorder]}>
+                      <View style={s.logItemIcon}><Text style={{ fontSize: 14 }}>🩸</Text></View>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={s.logHospitalText}>{log.hospital}</Text>
+                        <Text style={s.logDateText}>{formattedDate}</Text>
+                      </View>
+                      <View style={s.logBadge}><Text style={s.logBadgeText}>DONATED</Text></View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         </View>
       )}

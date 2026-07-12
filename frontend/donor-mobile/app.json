@@ -15,7 +15,8 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.pranko007.donormobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -23,6 +24,12 @@
     "scheme": "donor-mobile",
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "05b18a38-c9c6-4133-9f96-db43bec875da"
+      }
+    }
   }
 }

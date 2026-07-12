@@ -72,7 +72,9 @@ export default function HospitalDashboard() {
 
   // ─── APP STATE ───
   const [activeTab, setActiveTab] = useState('command'); // 'command' | 'map' | 'analytics'
-  const [serverUrl, setServerUrl] = useState('localhost:8000');
+  
+  const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+  const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8000/ws/dashboard';
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [wsLogs, setWsLogs] = useState([]);
@@ -133,7 +135,7 @@ export default function HospitalDashboard() {
       
       let token = "mock-token";
       try {
-        const tokenRes = await fetch(`http://${serverUrl}/api/auth/token`, {
+        const tokenRes = await fetch(`${API_URL}/api/auth/token`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
            body: formData.toString()
@@ -204,7 +206,7 @@ export default function HospitalDashboard() {
     if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
     
     setIsConnecting(true);
-    const url = `ws://${serverUrl}/ws/dashboard`;
+    const url = WS_URL;
     addLog(`Connecting to ${url}... (Attempt ${reconnectAttempts.current + 1})`);
     try {
       ws.current = new WebSocket(url);
@@ -278,16 +280,14 @@ export default function HospitalDashboard() {
     setIsSubmitting(true); setSubmitStatus(null);
     if (!patientName.trim()) { setSubmitStatus({ success: false, message: 'Patient Name is required for logging.'}); setIsSubmitting(false); return; }
     
-    let coords = { lat: 12.9734944, lng: 77.6151603 }; // Default to Bengaluru (Priya's exact location)
-    if (address.toLowerCase().includes('chennai')) {
-      coords = { lat: 13.0317061, lng: 80.240815 }; // Chennai (Arun's exact location)
-    } else if (address.toLowerCase().includes('tirupur')) {
-      coords = { lat: 11.1085, lng: 77.3411 }; // Tirupur
-    }
+    // In production, this should integrate with a Geocoding API or Map Pin Drop.
+    // Defaulting to a central coordinate for now.
+    let coords = { lat: 12.9716, lng: 77.5946 }; 
+    
     const payload = { hospital_id: hospitalProfile?.id, blood_group: bloodGroup, urgency, coordinates: coords, address, patient_name: patientName };
     addLog(`Sending Emergency Trigger POST to /api/dispatch: ${JSON.stringify(payload)}`);
     try {
-      const response = await fetch(`http://${serverUrl}/api/dispatch`, { 
+      const response = await fetch(`${API_URL}/api/dispatch`, { 
         method: 'POST', 
         headers: { 
           'Content-Type': 'application/json',
@@ -299,23 +299,34 @@ export default function HospitalDashboard() {
       else { const text = await response.text(); setSubmitStatus({ success: false, message: `Server error (${response.status}): ${text || 'Unknown failure'}` }); addLog(`POST /api/dispatch - Status ${response.status} failed`); }
     } catch (err) {
       setSubmitStatus({ success: false, message: `Failed to connect: ${err.message}` }); addLog(`POST /api/dispatch - Network error: ${err.message}`);
-      setTimeout(() => { 
-        setSubmitStatus({ success: true, message: 'Simulation Started: Dispatch triggered locally.' }); 
-        simulateMockCalls(); 
-      }, 1000);
     } finally { setIsSubmitting(false); }
   };
 
-  const simulateMockCalls = () => {
-    addLog('Simulating AI Voice Dispatch sequence...');
-    const initialMock = [
-      { donor_id: 'D-8812', name: 'Arjun Verma', status: 'ringing', eta_minutes: 10, group: bloodGroup },
-      { donor_id: 'D-9913', name: 'Kavitha R.', status: 'ringing', eta_minutes: 14, group: bloodGroup }
-    ];
-    setDispatches(initialMock);
-    setTimeout(() => { updateDonorStatus({ donor_id: 'D-8812', name: 'Arjun Verma', status: 'accepted', eta_minutes: 8, group: bloodGroup }); addLog('SIMULATOR: Arjun Verma accepted call.'); }, 3000);
-    setTimeout(() => { updateDonorStatus({ donor_id: 'D-9913', name: 'Kavitha R.', status: 'declined', eta_minutes: null, group: bloodGroup }); addLog('SIMULATOR: Kavitha R. declined.'); }, 6000);
+  const handleLogDonation = async (donorId) => {
+    try {
+      const payload = { donor_id: donorId, hospital_id: hospitalProfile?.id, notes: 'Completed via Dashboard' };
+      addLog(`Sending POST to /api/donate for donor: ${donorId}`);
+      const response = await fetch(`${API_URL}/api/donate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hospitalProfile?.token || ''}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        addLog(`Successfully logged donation for ${donorId}. Cooldown started.`);
+        setDispatches((prev) => prev.map(d => d.donor_id === donorId ? { ...d, status: 'completed' } : d));
+      } else {
+        const text = await response.text();
+        addLog(`Failed to log donation for ${donorId}: Status ${response.status} - ${text}`);
+      }
+    } catch (err) {
+      addLog(`Error logging donation: ${err.message}`);
+    }
   };
+
+
 
   const getStatusInfo = (status) => {
     switch (status) {
@@ -461,8 +472,6 @@ export default function HospitalDashboard() {
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
-              <Text style={{ color: colors.textMuted, fontSize: 10, marginRight: 8, fontWeight: '700' }}>WS SERVER:</Text>
-              <TextInput value={serverUrl} onChangeText={setServerUrl} style={s.serverInput} />
               <TouchableOpacity onPress={isConnected ? disconnectWebSocket : connectWebSocket} style={[s.connBtn, isConnected ? s.connBtnOn : s.connBtnOff]}>
                 <Text style={{ fontSize: 10, fontWeight: 'bold', color: isConnected ? '#059669' : colors.onPrimaryContainer }}>
                   {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
@@ -587,6 +596,11 @@ export default function HospitalDashboard() {
                               </>
                             ) : (
                               <Text style={s.etaLabel}>System bypassed</Text>
+                            )}
+                            {donor.status === 'accepted' && (
+                              <TouchableOpacity onPress={() => handleLogDonation(donor.donor_id)} style={{ marginTop: 6, backgroundColor: colors.secondary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                <Text style={{ color: '#000', fontSize: 10, fontWeight: 'bold' }}>MARK DONATED</Text>
+                              </TouchableOpacity>
                             )}
                           </View>
                         </View>

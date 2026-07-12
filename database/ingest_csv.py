@@ -43,33 +43,43 @@ NOMINATIM_USER_AGENT = "BloodDispatchNetwork-Hackathon/1.0"
 SECONDS_BETWEEN_GEOCODE_CALLS = 1.1
 
 
-def geocode_address(address: str) -> Optional[dict]:
+def geocode_address(address: str, retries: int = 3) -> Optional[dict]:
     """
     Convert a street address into {"lat": float, "lng": float} using
     OpenStreetMap Nominatim (free, no API key required).
     Returns None if the address couldn't be geocoded (logged, not fatal —
     we skip that row rather than crash the whole ingest).
     """
-    response = requests.get(
-        GEOCODE_URL,
-        params={"q": address, "format": "json", "limit": 1},
-        headers={"User-Agent": NOMINATIM_USER_AGENT},
-        timeout=10,
-    )
-    response.raise_for_status()
-    results = response.json()
+    for attempt in range(retries):
+        try:
+            response = requests.get(
+                GEOCODE_URL,
+                params={"q": address, "format": "json", "limit": 1},
+                headers={"User-Agent": NOMINATIM_USER_AGENT},
+                timeout=10,
+            )
+            response.raise_for_status()
+            results = response.json()
 
-    if not results:
-        print(f"  [WARN] Could not geocode: '{address}' (no results)")
-        return None
+            if not results:
+                print(f"  [WARN] Could not geocode: '{address}' (no results)")
+                return None
 
-    return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])}
+            return {"lat": float(results[0]["lat"]), "lng": float(results[0]["lon"])}
+        except requests.RequestException as e:
+            if attempt < retries - 1:
+                wait_time = SECONDS_BETWEEN_GEOCODE_CALLS * (2 ** attempt)
+                print(f"  [WARN] Geocoding failed for '{address}' ({e}). Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"  [ERROR] Geocoding failed permanently for '{address}' after {retries} attempts.")
+                return None
 
 
 _INSERT_DONOR_QUERY = """
-MERGE (d:Donor {id: $id})
+MERGE (d:Donor {phone: $phone})
+ON CREATE SET d.id = $id
 SET d.name = $name,
-    d.phone = $phone,
     d.blood_group = $blood_group,
     d.language = $language,
     d.location = point({latitude: $lat, longitude: $lng}),
@@ -95,7 +105,7 @@ def insert_donor(driver, donor: dict) -> None:
 
 def run_ingest(csv_path: Path) -> None:
     neo4j_uri = os.environ["NEO4J_URI"]
-    neo4j_user = os.environ["NEO4J_USERNAME"]
+    neo4j_user = os.environ["NEO4J_USER"]
     neo4j_password = os.environ["NEO4J_PASSWORD"]
 
     driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))

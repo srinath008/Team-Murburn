@@ -17,5 +17,5 @@ COPY . /app/backend
 # Expose the FastAPI port
 EXPOSE 8000
 
-# Command to run the application using Uvicorn
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# Command to run the application using Uvicorn with 4 workers for production concurrency
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--workers", "4"]
