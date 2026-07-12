@@ -180,5 +180,20 @@ async def register_new_donor(payload: DonorRegistration):
 
 @router.get("/health")
 async def health_check():
-    """Simple liveness probe."""
-    return {"status": "healthy", "service": "blood-dispatch-backend"}
+    """Advanced liveness and readiness probe."""
+    from backend.db_services import _get_driver
+    db_status = "unknown"
+    try:
+        driver = _get_driver()
+        async with driver.session() as session:
+            await session.run("RETURN 1")
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+        logger.error("Health check failed to connect to Neo4j: %s", e)
+
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "service": "blood-dispatch-backend",
+        "neo4j": db_status
+    }
