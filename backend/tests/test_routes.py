@@ -4,12 +4,20 @@ from unittest.mock import patch
 from backend.main import app
 from backend.schemas.models import DispatchResponse
 
+from unittest.mock import AsyncMock
+
 @pytest.mark.asyncio
-async def test_health_check():
+@patch("backend.api.routes._get_driver")
+async def test_health_check(mock_get_driver):
+    mock_session = AsyncMock()
+    mock_driver = AsyncMock()
+    mock_driver.session.return_value.__aenter__.return_value = mock_session
+    mock_get_driver.return_value = mock_driver
+    
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "service": "blood-dispatch-backend"}
+    assert response.json() == {"status": "healthy", "service": "blood-dispatch-backend", "neo4j": "connected"}
 
 @pytest.mark.asyncio
 async def test_unauthorized_dispatch():
