@@ -167,7 +167,7 @@ async def _initiate_single_call(
 
     try:
         result = await initiate_call(donor_node, dispatch_id, callback_url)
-        call_sid = result.get("Call", {}).get("Sid", "")
+        call_sid = result.get("sid", "")
         if call_sid:
             await dispatch_store.register_call(call_sid, dispatch_id, donor_id)
     except Exception as exc:
