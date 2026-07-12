@@ -166,7 +166,8 @@ export default function DonorApp() {
     }
   };
 
-  const SERVER_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+  // Hardcoded to guarantee connection (bypasses any EAS env var issues)
+  const SERVER_BASE_URL = 'https://team-murburn.onrender.com';
 
   const handleRegister = async () => {
     setRegError('');
@@ -314,22 +315,9 @@ export default function DonorApp() {
       setLat(latitude);
       setLng(longitude);
 
-      try {
-        const results = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (results && results.length > 0) {
-          const geo = results[0];
-          const parts = [
-            geo.name, geo.street, geo.district || geo.subregion,
-            geo.city, geo.region, geo.postalCode,
-          ].filter(Boolean);
-          const uniqueParts = [...new Set(parts)];
-          setAddress(uniqueParts.join(', '));
-        } else {
-          setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-        }
-      } catch {
-        setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-      }
+      // Removed reverseGeocodeAsync as it can cause native crashes on some Android devices
+      // without proper Google Play Services. Using coordinates directly instead.
+      setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
       setLocationSource('gps');
     } catch (err) {
       setLocationError(`Could not get location: ${err.message}. Please enter manually.`);
