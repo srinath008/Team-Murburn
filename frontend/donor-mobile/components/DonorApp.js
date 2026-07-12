@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Linking, Platform, Image, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Linking, Platform, Image, Alert, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
@@ -48,6 +48,7 @@ export default function DonorApp() {
   const [daysRemaining, setDaysRemaining] = useState(0);
   const [daysElapsed, setDaysElapsed] = useState(0);
   const [progressPercent, setProgressPercent] = useState(100);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ─── DONATION LOG STATE ───
   const [donationLog, setDonationLog] = useState([]);
@@ -125,7 +126,8 @@ export default function DonorApp() {
   const getProfileKey = () => `@donor_profile_${currentUser.id}`;
   const getLogKey = () => `@donor_log_${currentUser.id}`;
 
-  const loadProfile = async () => {
+  const loadProfile = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
     try {
       const savedProfile = await AsyncStorage.getItem(getProfileKey());
       if (savedProfile) {
@@ -206,6 +208,7 @@ export default function DonorApp() {
     } catch (err) {
       Alert.alert('Error', 'Failed to load profile');
     }
+    if (isRefresh) setRefreshing(false);
   };
 
   // Hardcoded to guarantee connection (bypasses any EAS env var issues)
@@ -561,7 +564,13 @@ export default function DonorApp() {
   );
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={s.rootContent}>
+    <ScrollView 
+      style={s.root} 
+      contentContainerStyle={s.rootContent}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => loadProfile(true)} colors={['#e11d48']} />
+      }
+    >
       <View style={s.headerWrap}>
         <View style={[s.row, { width: '100%', justifyContent: 'space-between', paddingHorizontal: 10, position: 'absolute', top: -30 }]}>
           <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: 'bold' }}>{currentUser.id}</Text>

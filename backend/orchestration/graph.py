@@ -220,16 +220,16 @@ async def route_donor_node(state: Dict[str, Any]) -> Dict[str, Any]:
                         donor_id,
                     )
                     # Fall through to SMS.
-                    await _send_sms_fallback(donor_data, dispatch_id, donor_id)
+                    await _send_sms_fallback(donor_data, dispatch_id, donor_id, state.get("lat", 0.0), state.get("lng", 0.0))
             except Exception as exc:
                 import sentry_sdk
                 sentry_sdk.capture_exception(exc)
                 logger.error("Push notification failed for donor %s: %s", donor_id, exc)
                 # Fall through to SMS on push failure.
-                await _send_sms_fallback(donor_data, dispatch_id, donor_id)
+                await _send_sms_fallback(donor_data, dispatch_id, donor_id, state.get("lat", 0.0), state.get("lng", 0.0))
         else:
             # Fallback — SMS with tracking link.
-            await _send_sms_fallback(donor_data, dispatch_id, donor_id)
+            await _send_sms_fallback(donor_data, dispatch_id, donor_id, state.get("lat", 0.0), state.get("lng", 0.0))
 
         update = DonorStatusUpdate(
             donor_id=donor_id,
@@ -243,12 +243,12 @@ async def route_donor_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _send_sms_fallback(
-    donor_data: Dict[str, Any], dispatch_id: str, donor_id: str
+    donor_data: Dict[str, Any], dispatch_id: str, donor_id: str, lat: float, lng: float
 ) -> None:
     """Send an SMS with a tracking link as a fallback routing path."""
     from backend.services.twilio_service import send_sms
 
-    tracking_url = f"https://bloodnet.app/track/{dispatch_id}/{donor_id}"
+    tracking_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
     await send_sms(
         phone=donor_data["phone"],
         message=f"Thank you for accepting! Navigate to the hospital: {tracking_url}",

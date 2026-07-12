@@ -369,7 +369,7 @@ async def _route_accepted_donor(
 
     # Fallback — SMS with tracking link.
     if phone:
-        tracking_url = f"https://bloodnet.app/track/{dispatch_id}/{donor_id}"
+        tracking_url = f"https://www.google.com/maps/search/?api=1&query={dispatch.get('lat', 0.0)},{dispatch.get('lng', 0.0)}"
         try:
             await send_sms(
                 phone=phone,

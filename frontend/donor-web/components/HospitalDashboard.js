@@ -279,7 +279,7 @@ export default function HospitalDashboard() {
         id: Date.now().toString(),
         patient: patientName || 'Emergency Patient',
         donor: payload.name,
-        group: bloodGroup,
+        group: bloodGroupRef.current,
         time: new Date().toLocaleString(),
         hospital: hospitalProfile?.id || 'HOSP-UNKNOWN'
       };
