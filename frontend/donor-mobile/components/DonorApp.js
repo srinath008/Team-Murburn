@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet, Linking, Platform, Image, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -189,29 +190,24 @@ export default function DonorApp() {
       last_donated_date: lastDonatedDate ? lastDonatedDate.toISOString() : null,
     };
     try {
-      const res = await fetch(`${SERVER_BASE_URL}/api/donor/register`, {
-        method: 'POST',
+      const res = await axios.post(`${SERVER_BASE_URL}/api/donor/register`, {
+        name: profile.name,
+        phone: profile.phone,
+        blood_group: profile.blood_group,
+        language: profile.language,
+        lat: profile.lat,
+        lng: profile.lng
+      }, {
         headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify({
-          name: profile.name,
-          phone: profile.phone,
-          blood_group: profile.blood_group,
-          language: profile.language,
-          lat: profile.lat,
-          lng: profile.lng
-        })
+          'Content-Type': 'application/json'
+        }
       });
-      if (!res.ok) {
-        throw new Error('Backend registration failed with status ' + res.status);
-      }
       await AsyncStorage.setItem(getProfileKey(), JSON.stringify(profile));
       setIsSaving(false); setIsRegistered(true); setIsEditing(false);
     } catch (err) {
       setIsSaving(false);
-      setRegError(`Failed to save profile: ${err.message}`);
+      const errorMsg = err.response ? `Backend error: ${err.response.status}` : err.message;
+      setRegError(`Failed to save profile: ${errorMsg}`);
     }
   };
 
@@ -310,9 +306,12 @@ export default function DonorApp() {
         setLocationLoading(false);
         return;
       }
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      let location = await Location.getLastKnownPositionAsync();
+      if (!location) {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low, // Low accuracy prevents GPS hardware crashes
+        });
+      }
       const { latitude, longitude } = location.coords;
       setLat(latitude);
       setLng(longitude);
