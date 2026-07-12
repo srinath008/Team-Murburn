@@ -82,6 +82,11 @@ export default function HospitalDashboard() {
   // ─── DISPATCH STATE ───
   const [patientName, setPatientName] = useState('');
   const [bloodGroup, setBloodGroup] = useState('O-');
+  const bloodGroupRef = useRef(bloodGroup);
+  
+  useEffect(() => {
+    bloodGroupRef.current = bloodGroup;
+  }, [bloodGroup]);
   const [urgency, setUrgency] = useState('critical');
   const [address, setAddress] = useState('');
   const [units, setUnits] = useState('4');
@@ -263,7 +268,7 @@ export default function HospitalDashboard() {
     setDispatches((prev) => {
       const exists = prev.some(d => d.donor_id === payload.donor_id);
       if (exists) return prev.map(d => d.donor_id === payload.donor_id ? { ...d, ...payload } : d);
-      return [{ ...payload, group: bloodGroup }, ...prev];
+      return [{ ...payload, group: bloodGroupRef.current }, ...prev];
     });
 
     if (payload.status === 'accepted') {
@@ -681,7 +686,7 @@ export default function HospitalDashboard() {
 
           {activeTab === 'map' && (
              <View style={{ flex: 1, backgroundColor: colors.surfaceSunken, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                <View style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, backgroundColor: 'rgba(11, 19, 38, 0.9)', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                <View style={{ position: 'absolute', bottom: 48, left: 16, zIndex: 10, backgroundColor: 'rgba(11, 19, 38, 0.9)', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
                    <Text style={{ color: colors.onSurface, fontSize: 18, fontWeight: 'bold' }}>Live Donor Network Map</Text>
                    <Text style={{ color: colors.textMuted, marginTop: 4, fontSize: 12 }}>Showing active donors near: {address}</Text>
                 </View>
