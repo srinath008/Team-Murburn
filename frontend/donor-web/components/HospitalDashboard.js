@@ -100,6 +100,13 @@ export default function HospitalDashboard() {
     checkLogin();
   }, []);
 
+  // CONNECT WEBSOCKET ON LOGIN
+  useEffect(() => {
+    if (isLoggedIn) {
+      connectWebSocket();
+    }
+  }, [isLoggedIn]);
+
   const checkLogin = async () => {
     try {
       const savedUser = await AsyncStorage.getItem('@hosp_user');
@@ -281,8 +288,8 @@ export default function HospitalDashboard() {
     if (!patientName.trim()) { setSubmitStatus({ success: false, message: 'Patient Name is required for logging.'}); setIsSubmitting(false); return; }
     
     // In production, this should integrate with a Geocoding API or Map Pin Drop.
-    // Defaulting to a central coordinate for now.
-    let coords = { lat: 12.9716, lng: 77.5946 }; 
+    // Defaulting to 0.0 so the backend geocodes the address field automatically.
+    let coords = { lat: 0.0, lng: 0.0 };
     
     const payload = { hospital_id: hospitalProfile?.id, blood_group: bloodGroup, urgency, coordinates: coords, address, patient_name: patientName };
     addLog(`Sending Emergency Trigger POST to /api/dispatch: ${JSON.stringify(payload)}`);
