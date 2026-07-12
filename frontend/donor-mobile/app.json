@@ -23,7 +23,21 @@
     },
     "scheme": "donor-mobile",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow BloodDispatch to use your location to find nearby hospitals during emergencies.",
+          "locationWhenInUsePermission": "Allow BloodDispatch to use your location to find nearby hospitals during emergencies."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow BloodDispatch to access your photos for your profile picture.",
+          "cameraPermission": "Allow BloodDispatch to access your camera for your profile picture."
+        }
+      ]
     ],
     "extra": {
       "router": {},
