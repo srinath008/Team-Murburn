@@ -1,0 +1,39 @@
+# Git
+.git/
+.github/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python Caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+
+# Testing
+tests/
+test_*.py
+backend/tests/
+backend/test_*.py
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Local data & Logs
+runs.json
+scripts/
+database/sample_donors.csv
+database/setup_db.py
+database/ingest_csv.py
+database/schema.cypher
+
+# Node / JS
+node_modules/
+dist/
+build/
+.expo/

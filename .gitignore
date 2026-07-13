@@ -19,3 +19,9 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+
+# Testing & Local Logs
+runs.json
+.pytest_cache/
+htmlcov/
+.coverage
