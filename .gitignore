@@ -25,3 +25,16 @@ runs.json
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Idle / Testing / Docs (Untracked)
+test_*.py
+tests/
+backend/tests/
+scripts/
+database/setup_db.py
+database/ingest_csv.py
+database/schema.cypher
+database/sample_donors.csv
+database/README.md
+*.md
+!README.md
