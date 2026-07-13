@@ -364,7 +364,7 @@ export default function HospitalDashboard() {
         <View style={s.loginBox}>
           <View style={{ alignItems: 'center', marginBottom: 32 }}>
             <View style={[s.logoBox, { width: 56, height: 56, borderRadius: 16, marginBottom: 16 }]}><Activity size={32} color={colors.onPrimaryContainer} /></View>
-            <Text style={{ color: colors.onSurface, fontSize: 24, fontWeight: '800' }}>LifeSource Med</Text>
+            <Text style={{ color: colors.onSurface, fontSize: 24, fontWeight: '800' }}>HaemNet App</Text>
             <Text style={{ color: colors.textMuted, fontSize: 12, letterSpacing: 2, marginTop: 4 }}>HOSPITAL PORTAL</Text>
           </View>
 
@@ -441,7 +441,7 @@ export default function HospitalDashboard() {
       <View style={s.sidebar}>
         <View style={s.sidebarHeader}>
           <View style={s.logoBox}><Activity size={24} color={colors.onPrimaryContainer} /></View>
-          <Text style={s.sidebarTitle}>LifeSource Med</Text>
+          <Text style={s.sidebarTitle}>HaemNet App</Text>
           <View style={s.systemStatus}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.secondaryContainer, marginRight: 6 }} />
             <Text style={s.systemStatusText}>SYSTEM STATUS: ACTIVE</Text>
@@ -476,7 +476,7 @@ export default function HospitalDashboard() {
         {/* TOP APP BAR */}
         <View style={s.topbar}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={s.topbarTitle}>BloodDispatch</Text>
+            <Text style={s.topbarTitle}>HaemNet App</Text>
             {activeTab === 'command' && (
               <View style={s.activeBadge}>
                 <PulseDot color={colors.error} size={8} />

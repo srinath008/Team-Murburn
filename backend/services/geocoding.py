@@ -26,7 +26,7 @@ async def geocode_address(address: str) -> Optional[Tuple[float, float]]:
 
     # Nominatim requires a descriptive User-Agent
     headers = {
-        "User-Agent": "AIBloodDispatchNetwork/1.0 (contact@hackahazard.com)"
+        "User-Agent": "HaemNetApp/1.0 (contact@hackahazard.com)"
     }
     
     query = urllib.parse.quote(address)

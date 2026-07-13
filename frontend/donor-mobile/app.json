@@ -27,15 +27,15 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow BloodDispatch to use your location to find nearby hospitals during emergencies.",
-          "locationWhenInUsePermission": "Allow BloodDispatch to use your location to find nearby hospitals during emergencies."
+          "locationAlwaysAndWhenInUsePermission": "Allow HaemNet App to use your location to find nearby hospitals during emergencies.",
+          "locationWhenInUsePermission": "Allow HaemNet App to use your location to find nearby hospitals during emergencies."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow BloodDispatch to access your photos for your profile picture.",
-          "cameraPermission": "Allow BloodDispatch to access your camera for your profile picture."
+          "photosPermission": "Allow HaemNet App to access your photos for your profile picture.",
+          "cameraPermission": "Allow HaemNet App to access your camera for your profile picture."
         }
       ]
     ],

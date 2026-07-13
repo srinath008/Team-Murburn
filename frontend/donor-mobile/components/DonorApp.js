@@ -417,7 +417,7 @@ export default function DonorApp() {
       <View style={[s.root, { justifyContent: 'center', padding: 24 }]}>
         <View style={{ alignItems: 'center', marginBottom: 40 }}>
           <View style={s.headerIcon}><Text style={{ fontSize: 32 }}>❤️</Text></View>
-          <Text style={s.headerTitle}>Donor Lifeline</Text>
+          <Text style={s.headerTitle}>HaemNet App</Text>
           <Text style={s.headerSub}>SIGN IN TO CONTINUE</Text>
         </View>
 
@@ -574,7 +574,7 @@ export default function DonorApp() {
           <TouchableOpacity onPress={handleLogout}><Text style={{ color: '#e11d48', fontSize: 12, fontWeight: 'bold' }}>Logout</Text></TouchableOpacity>
         </View>
         <View style={s.headerIcon}><Text style={{ fontSize: 28 }}>❤️</Text></View>
-        <Text style={s.headerTitle}>Donor Lifeline App</Text>
+        <Text style={s.headerTitle}>HaemNet App</Text>
         <Text style={s.headerSub}>ACTIVE EMERGENCY DONOR NETWORK</Text>
       </View>
 
