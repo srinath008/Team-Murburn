@@ -1,5 +1,7 @@
 # HaemNet
 
+![HaemNet Logo](assets/logo.png)
+
 An intelligent, real-time emergency blood dispatch system that leverages graph databases and AI-orchestrated voice calls to instantly connect hospitals with nearby eligible blood donors. 
 
 ## The Problem
@@ -24,6 +26,8 @@ The donor-facing mobile application is built using **Expo and React Native**, pr
 - **Frictionless Onboarding:** The Expo framework enables fast, reliable updates and native device capabilities (like geolocation and image picking) critical for maintaining a live donor network.
 
 ## System Architecture & Approach
+
+![System Architecture](assets/architecture.png)
 
 Our approach relies on a heavily decoupled, event-driven architecture designed for high concurrency and real-time feedback.
 
